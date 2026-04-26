@@ -611,11 +611,14 @@ function getRubEquiv(amount, currency) {
 function applyRateLogic(baseRate, rubEquiv, toCurrency) {
   if (!rubEquiv || rubEquiv <= 0) return { rate: baseRate, commission: 0, note: '', msg: '' };
   let rate = baseRate, commission = 0, note = '', msg = '';
+  // Комиссия зашита в курс (коэффициент), отдельно не показывается
   if (rubEquiv < 15000) {
-    commission = 250;
+    const factor = Math.max(0, 1 - 250 / rubEquiv);
+    rate = baseRate * factor;
     msg = 'При обмене такой суммы курс менее выгодный. При увеличении суммы от 15.000 ₽ условия будут лучше.';
   } else if (rubEquiv < 20000) {
-    commission = 180;
+    const factor = Math.max(0, 1 - 180 / rubEquiv);
+    rate = baseRate * factor;
     msg = 'Курс на эту сумму чуть ниже основного. При обмене от 20.000 ₽ курс будет значительно выгоднее.';
   } else if (rubEquiv < 100000) {
     msg = 'Готовы сделать обмен в ближайшее время.';
@@ -637,9 +640,12 @@ function applyRateLogic(baseRate, rubEquiv, toCurrency) {
     msg = 'Отличная сумма. Вам будет предложен индивидуальный курс.';
     note = '⭐ Индивидуальный';
   }
-  return { rate, commission, note, msg };
+  // Округление курса по правилам
+  if (toCurrency === 'VND' || toCurrency === 'VND_b') rate = Math.round(rate);
+  else rate = Math.round(rate * 10) / 10;
+  return { rate, commission: 0, note, msg };
 }
-
+  
 function roundAmount(amount, currency) {
   if (!amount) return 0;
   if (currency === 'RUB_b') return Math.round(amount / 50) * 50;
