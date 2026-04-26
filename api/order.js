@@ -1,11 +1,8 @@
 // api/order.js — Vercel Serverless Function
-// Принимает заявку из Mini App и:
-// 1. Отправляет в группу операторов
-// 2. Отправляет клиенту в личку
-// 3. Записывает в Google Таблицу через Apps Script
 
 const BOT_TOKEN       = process.env.BOT_TOKEN;
 const GROUP_ID        = process.env.GROUP_ID;
+const THREAD_ID       = process.env.THREAD_ID;
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 
 function genOrderNum() {
@@ -19,12 +16,14 @@ function nowVN() {
     .replace('T', ' ').substring(0, 16) + ' (GMT+7)';
 }
 
-async function tgSend(chatId, text) {
+async function tgSend(chatId, text, threadId) {
   try {
+    const body = { chat_id: chatId, text, parse_mode: 'HTML' };
+    if (threadId) body.message_thread_id = parseInt(threadId);
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+      body: JSON.stringify(body),
     });
     return res.json();
   } catch(e) { console.error('tgSend error:', e); }
@@ -58,14 +57,14 @@ function buildGroupMessage(d, orderNum) {
     `🗓 Дата: ${d.date}`,
     `🕒 Время: ${d.time}`,
   ];
-  if (d.location)              lines.push(`📍 Место: ${d.location}`);
+  if (d.location)                lines.push(`📍 Место: ${d.location}`);
   if (d.reqs && d.reqs.fromBank) lines.push(`🏦 Банк отправки: ${d.reqs.fromBank}`);
   if (d.reqs && d.reqs.toName)   lines.push(`👤 Получатель: ${d.reqs.toName}`);
   if (d.reqs && d.reqs.toPhone)  lines.push(`📱 Телефон/карта: ${d.reqs.toPhone}`);
   if (d.reqs && d.reqs.toBank)   lines.push(`🏦 Банк получателя: ${d.reqs.toBank}`);
   if (d.reqs && d.reqs.usdtNet)  lines.push(`🔗 Сеть USDT: ${d.reqs.usdtNet}`);
   if (d.reqs && d.reqs.usdtAddr) lines.push(`💳 Адрес: ${d.reqs.usdtAddr}`);
-  if (d.comment)               lines.push(``, `💬 Комментарий: ${d.comment}`);
+  if (d.comment)                 lines.push(``, `💬 Комментарий: ${d.comment}`);
   lines.push(``, `<i>№ заявки: ${orderNum}</i>`);
   return lines.join('\n');
 }
@@ -103,7 +102,7 @@ export default async function handler(req, res) {
     const orderNum = genOrderNum();
     const datetime = nowVN();
 
-    if (GROUP_ID) await tgSend(GROUP_ID, buildGroupMessage(d, orderNum));
+    if (GROUP_ID) await tgSend(GROUP_ID, buildGroupMessage(d, orderNum), THREAD_ID);
     if (d.userId) await tgSend(d.userId, buildClientMessage(d, orderNum));
 
     await appendToSheet({
