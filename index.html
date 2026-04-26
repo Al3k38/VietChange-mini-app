@@ -178,6 +178,16 @@
     color: white; padding: 10px 20px; font-size: 13px; font-family: 'Inter', sans-serif; cursor: pointer; }
 </style>
 <body>
+<!-- NOT-IN-TELEGRAM SCREEN -->
+<div id="not-tg-screen" style="display:none; position:fixed; inset:0; z-index:9999; background:linear-gradient(135deg,#0f0f13 0%,#16213e 50%,#0f3460 100%); color:#fff; padding:32px; flex-direction:column; align-items:center; justify-content:center; text-align:center; font-family:'Inter',sans-serif;">
+  <div style="font-size:64px; margin-bottom:16px;">💱</div>
+  <div style="font-family:'Unbounded',sans-serif; font-size:28px; font-weight:700; background:linear-gradient(135deg,#4f8ef7,#6c63ff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:8px;">VietChange</div>
+  <div style="font-size:13px; color:#888; margin-bottom:32px;">Обмен валют · Вьетнам</div>
+  <div style="font-size:18px; font-weight:600; margin-bottom:12px; max-width:320px;">Откройте обменник в Telegram</div>
+  <div style="font-size:14px; color:#aaa; max-width:320px; line-height:1.5; margin-bottom:32px;">Для безопасного оформления заявки используйте наш бот в Telegram</div>
+  <a href="https://t.me/VietMoneyBot" style="display:block; background:linear-gradient(135deg,#4f8ef7,#6c63ff); color:#fff; text-decoration:none; padding:16px 32px; border-radius:14px; font-size:15px; font-weight:700; font-family:'Unbounded',sans-serif; letter-spacing:.02em; box-shadow:0 4px 20px rgba(79,142,247,.4);">📱 Открыть в Telegram</a>
+  <div style="font-size:12px; color:#666; margin-top:24px;">@VietMoneyBot</div>
+</div>
 
 <!-- LOADING SCREEN -->
 <div id="loading-screen">
@@ -430,6 +440,11 @@
 </div>
 
 <script>
+  // Проверка что открыто в Telegram
+if (!window.Telegram?.WebApp?.initData) {
+  document.getElementById('not-tg-screen').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
 // ─── VERCEL API CONFIG ────────────────────────────────────────
 // ⚠️ Замените на URL вашего Vercel проекта после деплоя
 const VERCEL_API_URL = 'https://viet-change-mini-app.vercel.app/api/order';
