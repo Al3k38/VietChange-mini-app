@@ -1,11 +1,13 @@
-// api/order.js — Vercel Serverless Function with Telegram InitData verification
+// api/order.js — Vercel Serverless Function with Telegram InitData verification + PuzzleBot
 
 import crypto from 'crypto';
 
-const BOT_TOKEN       = process.env.BOT_TOKEN;
-const GROUP_ID        = process.env.GROUP_ID;
-const THREAD_ID       = process.env.THREAD_ID;
-const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
+const BOT_TOKEN        = process.env.BOT_TOKEN;
+const GROUP_ID         = process.env.GROUP_ID;
+const THREAD_ID        = process.env.THREAD_ID;
+const APPS_SCRIPT_URL  = process.env.APPS_SCRIPT_URL;
+const PUZZLEBOT_TOKEN  = process.env.PUZZLEBOT_TOKEN;
+const PUZZLEBOT_CMD    = process.env.PUZZLEBOT_CMD || 'Повтор заявки (Mini App)';
 
 function verifyTelegramInitData(initData, botToken) {
   if (!initData) return null;
@@ -23,8 +25,7 @@ function verifyTelegramInitData(initData, botToken) {
   const authDate = parseInt(params.get('auth_date') || '0');
   if (Date.now()/1000 - authDate > 3600) return null;
   try {
-    const user = JSON.parse(params.get('user') || '{}');
-    return user;
+    return JSON.parse(params.get('user') || '{}');
   } catch { return null; }
 }
 
@@ -50,6 +51,17 @@ async function tgSend(chatId, text, threadId) {
     });
     return res.json();
   } catch(e) { console.error('tgSend error:', e); }
+}
+
+// Вызов команды PuzzleBot — клиент получит сообщение с кнопками
+async function puzzleSendCommand(userId, commandName) {
+  if (!PUZZLEBOT_TOKEN || !userId) return;
+  try {
+    const url = `https://api.puzzlebot.top/?token=${PUZZLEBOT_TOKEN}&method=sendCommand&command_name=${encodeURIComponent(commandName)}&tg_chat_id=${userId}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.code !== 0) console.warn('PuzzleBot error:', data);
+  } catch(e) { console.error('PuzzleBot error:', e); }
 }
 
 async function appendToSheet(data) {
@@ -135,7 +147,12 @@ export default async function handler(req, res) {
     const datetime = nowVN();
 
     if (GROUP_ID) await tgSend(GROUP_ID, buildGroupMessage(d, orderNum), THREAD_ID);
-    if (d.userId) await tgSend(d.userId, buildClientMessage(d, orderNum));
+    if (d.userId) {
+      await tgSend(d.userId, buildClientMessage(d, orderNum));
+      // Через секунду вызываем команду PuzzleBot — клиент получит кнопки
+      await new Promise(r => setTimeout(r, 800));
+      await puzzleSendCommand(d.userId, PUZZLEBOT_CMD);
+    }
 
     await appendToSheet({
       orderNum, datetime,
