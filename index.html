@@ -242,6 +242,12 @@
       <div class="pair-block">
         <div class="pair-label">Получаете</div>
         <select class="currency-select" id="sel-to" onchange="onPairChange()">
+          <optgroup label="Наличные">
+            <option value="VND">🇻🇳 VND</option>
+            <option value="USD">🇺🇸 USD</option>
+            <option value="EUR">🇪🇺 EUR</option>
+            <option value="OTHER_c">💱 Другая (наличные)</option>
+          </optgroup>
           <optgroup label="Безналичные">
             <option value="VND_b">🇻🇳 VND (безнал)</option>
             <option value="RUB_b">🇷🇺 RUB (безнал)</option>
@@ -249,12 +255,6 @@
             <option value="KZT_b">🇰🇿 KZT (безнал)</option>
             <option value="THB_b">🇹🇭 THB (безнал)</option>
             <option value="OTHER_b">🌐 Другая (безнал)</option>
-          </optgroup>
-          <optgroup label="Наличные">
-            <option value="VND">🇻🇳 VND</option>
-            <option value="USD">🇺🇸 USD</option>
-            <option value="EUR">🇪🇺 EUR</option>
-            <option value="OTHER_c">💱 Другая (наличные)</option>
           </optgroup>
         </select>
         <div id="extra-to" class="extra-field hidden">
@@ -716,7 +716,7 @@ const ATM_PAIRS = new Set([
 
 // ─── STATE ────────────────────────────────────────────────────
 let state = {
-  from: 'RUB_b', to: 'VND_b',
+  from: 'RUB_b', to: 'VND',
   amountFrom: '', amountTo: '',
   method: '', date: 'today', timeSlot: 0,
   customDate: '',
