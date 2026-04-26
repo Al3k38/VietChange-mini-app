@@ -878,9 +878,9 @@ function showBankInstruction() {
   const el = document.getElementById('bank-instruction');
   el.classList.remove('hidden');
   if (bank === 'Vietcombank') {
-    el.innerHTML = '<strong>📋 Инструкция Vietcombank</strong>1. Подойдите к банкомату Vietcombank.<br>2. Нажмите «Rút tiền» (Снятие наличных).<br>3. Введите полученный от нас код или отсканируйте QR.<br>4. Введите сумму, кратную 100.000 VND.<br>5. Заберите деньги и чек.';
+    el.innerHTML = '<strong>📋 Инструкция Vietcombank</strong>1. Подойдите к банкомату Vietcombank.<br>2. Нажмите кнопку вызова QRкода.<br>3. Выбрать нужный язык.<br>4. Появившийся QR отправьте в чат.<br>5. Введите отправленный нами пин код.<br>6. Делее на все нажимайте "Ok" / "Confirm".<br>7. Заберите наличные 💴.';
   } else {
-    el.innerHTML = '<strong>📋 Инструкция BIDV</strong>1. Подойдите к банкомату BIDV.<br>2. Выберите «Cardless withdrawal».<br>3. Введите код транзакции, отправленный нами.<br>4. Введите OTP-код из SMS.<br>5. Заберите наличные.';
+    el.innerHTML = '<strong>📋 Инструкция BIDV</strong>1. Подойдите к банкомату BIDV.<br>2. Нажмите кнопку вызова QRкода.<br>3. Выбрать нужный язык.<br>4. Появившийся QR отправьте в чат.<br>5. Введите отправленный нами пин код.<br>6. Делее на все нажимайте "Ok" / "Confirm".<br>7. Заберите наличные 💴.';
   }
 }
 
