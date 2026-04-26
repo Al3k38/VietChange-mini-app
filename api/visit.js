@@ -110,8 +110,13 @@ export default async function handler(req, res) {
     });
 
     return res.status(200).json({ ok: true });
-  } catch(e) {
+} catch(e) {
     console.error('Visit handler error:', e);
-    return res.status(500).json({ error: 'Internal error' });
+    try {
+      if (GROUP_ID) {
+        await tgSend(GROUP_ID, `⚠️ Ошибка логирования визита: ${e.message}`, null);
+      }
+    } catch(_) {}
+    return res.status(500).json({ ok: false, error: 'Internal error' });
   }
 }
