@@ -175,6 +175,17 @@ export default async function handler(req, res) {
 
   } catch(e) {
     console.error('Handler error:', e);
-    return res.status(500).json({ error: 'Internal error', detail: e.message });
+    // Алерт в General-топик что заявка не доставлена
+    try {
+      if (GROUP_ID) {
+        const errMsg = `🚨 <b>ОШИБКА ОБРАБОТКИ ЗАЯВКИ</b>\n\n` +
+          `❌ Заявка от клиента не была отправлена!\n\n` +
+          `<b>Ошибка:</b> ${e.message || 'Unknown'}\n` +
+          `<b>Время:</b> ${nowVN()}\n\n` +
+          `⚠️ Свяжитесь с клиентом вручную если он напишет в чат.`;
+        await tgSend(GROUP_ID, errMsg, null);
+      }
+    } catch(_) {}
+    return res.status(500).json({ ok: false, error: 'Internal error', detail: e.message });
   }
 }
