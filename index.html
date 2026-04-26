@@ -1055,6 +1055,7 @@ async function submitOrder() {
 
   // Payload для Vercel
   const payload = {
+    initData: window.Telegram?.WebApp?.initData || '',
     userId, username, firstName,
     fromLabel, toLabel, fromCode, toCode,
     amtFrom: formatNum(d.amtFrom),
