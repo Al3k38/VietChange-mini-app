@@ -1195,16 +1195,13 @@ async function submitOrder() {
   const firstName = tgUser?.first_name || username;
   const userId    = tgUser?.id || null;
 
-  // Текущий курс для заявки
   const baseRate = getRate(d.from, d.to);
   const rateStr  = baseRate ? `1 ${fromCode} = ${formatNum(baseRate)} ${toCode}` : 'уточнение у оператора';
 
-  // Показываем экран загрузки
   document.getElementById('submit-btn') && (document.getElementById('submit-btn').disabled = true);
   showPage('page-success');
   document.getElementById('success-msg').textContent = '⏳ Отправляем заявку...';
 
-  // Payload для Vercel
   const payload = {
     initData: window.Telegram?.WebApp?.initData || '',
     userId, username, firstName,
@@ -1221,8 +1218,9 @@ async function submitOrder() {
   };
 
   let orderNum = '';
+  let sendError = '';
 
-  // Отправка на Vercel
+  // Отправка на Vercel с проверкой статуса
   if (VERCEL_API_URL && !VERCEL_API_URL.startsWith('ВСТАВЬТЕ')) {
     try {
       const res = await fetch(VERCEL_API_URL, {
@@ -1230,14 +1228,37 @@ async function submitOrder() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const json = await res.json();
-      orderNum = json.orderNum || '';
+      if (!res.ok) {
+        sendError = `Ошибка сервера (${res.status})`;
+      } else {
+        const json = await res.json();
+        if (!json || json.ok === false) {
+          sendError = (json && json.error) || 'Неизвестная ошибка сервера';
+        } else {
+          orderNum = json.orderNum || '';
+        }
+      }
     } catch(e) {
       console.error('Vercel send error:', e);
+      sendError = 'Нет связи с сервером. Проверьте интернет.';
     }
+  } else {
+    sendError = 'Сервер не настроен';
   }
 
-  // Текст для экрана успеха
+  // Если была ошибка — показываем её клиенту
+  if (sendError) {
+    document.querySelector('.success-icon').textContent = '⚠️';
+    document.querySelector('.success-title').textContent = 'Что-то пошло не так';
+    document.querySelector('.success-sub').textContent = 'Заявка не была отправлена менеджеру';
+    document.getElementById('success-msg').innerHTML =
+      `<div style="color:#ef4444; font-weight:600; font-size:14px; margin-bottom:12px;">⚠️ Заявка не отправлена</div>` +
+      `<div style="color:var(--muted); font-size:13px; margin-bottom:16px;">${sendError}</div>` +
+      `<div style="color:var(--text); font-size:13px;">Пожалуйста, свяжитесь с нашим менеджером напрямую: <a href="https://t.me/VietMoneyBot" style="color:var(--accent);">@VietMoneyBot</a></div>`;
+    return;
+  }
+
+  // Успех — показываем подтверждение
   const msg = [
     `${firstName}, ваша заявка принята! 🎉`,
     ``,
