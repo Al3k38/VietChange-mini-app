@@ -937,9 +937,15 @@ function selectDate(el, val) {
 }
 
 function getVNTime() {
-  const now = new Date();
-  const vn = new Date(now.getTime() + (7 * 3600000) - (now.getTimezoneOffset() * 60000));
-  return vn;
+  // Получаем время Вьетнама (Asia/Ho_Chi_Minh) корректно независимо от часового пояса устройства
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+  const parts = fmt.formatToParts(new Date());
+  const hh = parseInt(parts.find(p => p.type === 'hour').value);
+  const mm = parseInt(parts.find(p => p.type === 'minute').value);
+  return { getHours: () => hh, getMinutes: () => mm };
 }
 
 var TIME_SLOTS = Array.from({length:28}, (_,i) => {
@@ -960,12 +966,36 @@ function updateTimeSlider() {
 
 function setNearestTime() {
   const vn = getVNTime();
-  const totalMin = vn.getHours() * 60 + vn.getMinutes() + 30;
-  const rounded = Math.ceil(totalMin / 30) * 30;
-  const slot = Math.max(0, Math.min(27, Math.round((rounded - 8*60) / 30)));
+  const curMin = vn.getHours() * 60 + vn.getMinutes();
+  const startMin = 8 * 60;       // 08:00
+  const endMin   = 21 * 60 + 30; // 21:30 (начало последнего слота)
+
+  // Если до 8:00 утра — первый слот сегодня
+  if (curMin < startMin) {
+    document.getElementById('time-slider').value = 0;
+    document.querySelectorAll('.date-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+    state.date = 'today';
+    document.getElementById('custom-date-wrap').classList.add('hidden');
+    updateTimeSlider();
+    return;
+  }
+
+  // Если позже 21:30 — переключаем на завтра, первый слот
+  if (curMin > endMin) {
+    document.getElementById('time-slider').value = 0;
+    document.querySelectorAll('.date-tab').forEach((t,i) => t.classList.toggle('active', i===1));
+    state.date = 'tomorrow';
+    document.getElementById('custom-date-wrap').classList.add('hidden');
+    updateTimeSlider();
+    return;
+  }
+
+  // Иначе — ближайший слот через ~30 минут от текущего времени
+  const targetMin = curMin + 30;
+  const rounded = Math.ceil(targetMin / 30) * 30;
+  const slot = Math.max(0, Math.min(27, Math.round((rounded - startMin) / 30)));
   document.getElementById('time-slider').value = slot;
   updateTimeSlider();
-  // Set today
   document.querySelectorAll('.date-tab').forEach((t,i) => t.classList.toggle('active', i===0));
   state.date = 'today';
   document.getElementById('custom-date-wrap').classList.add('hidden');
