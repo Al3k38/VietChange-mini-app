@@ -1,9 +1,32 @@
-// api/order.js — Vercel Serverless Function
+// api/order.js — Vercel Serverless Function with Telegram InitData verification
+
+import crypto from 'crypto';
 
 const BOT_TOKEN       = process.env.BOT_TOKEN;
 const GROUP_ID        = process.env.GROUP_ID;
 const THREAD_ID       = process.env.THREAD_ID;
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
+
+function verifyTelegramInitData(initData, botToken) {
+  if (!initData) return null;
+  const params = new URLSearchParams(initData);
+  const hash = params.get('hash');
+  if (!hash) return null;
+  params.delete('hash');
+  const dataCheckString = [...params.entries()]
+    .sort(([a],[b]) => a.localeCompare(b))
+    .map(([k,v]) => `${k}=${v}`)
+    .join('\n');
+  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
+  const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+  if (computedHash !== hash) return null;
+  const authDate = parseInt(params.get('auth_date') || '0');
+  if (Date.now()/1000 - authDate > 3600) return null;
+  try {
+    const user = JSON.parse(params.get('user') || '{}');
+    return user;
+  } catch { return null; }
+}
 
 function genOrderNum() {
   const d = new Date(Date.now() + 7 * 3600 * 1000);
@@ -98,6 +121,15 @@ export default async function handler(req, res) {
   try {
     const d = req.body;
     if (!d || !d.amtFrom) return res.status(400).json({ error: 'Invalid data' });
+
+    const verifiedUser = verifyTelegramInitData(d.initData, BOT_TOKEN);
+    if (!verifiedUser) {
+      console.warn('Invalid initData, request rejected');
+      return res.status(403).json({ error: 'Forbidden: invalid signature' });
+    }
+    d.userId    = verifiedUser.id;
+    d.username  = verifiedUser.username ? '@' + verifiedUser.username : (verifiedUser.first_name || 'Клиент');
+    d.firstName = verifiedUser.first_name || d.username;
 
     const orderNum = genOrderNum();
     const datetime = nowVN();
