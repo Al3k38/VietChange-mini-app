@@ -34,15 +34,21 @@ function nowVN() {
 
 async function tgSend(chatId, text, threadId) {
   try {
-    const body = { chat_id: chatId, text, parse_mode: 'HTML', disable_notification: true };
+    const body = { chat_id: chatId, text, parse_mode: 'HTML' };
     if (threadId) body.message_thread_id = parseInt(threadId);
+    console.log('TG SEND request:', JSON.stringify(body));
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    return res.json();
-  } catch(e) { console.error('tgSend error:', e); }
+    const json = await res.json();
+    console.log('TG SEND response:', JSON.stringify(json));
+    return json;
+  } catch(e) {
+    console.error('tgSend error:', e);
+    return { ok: false, error: e.message };
+  }
 }
 
 async function logToSheet(data) {
