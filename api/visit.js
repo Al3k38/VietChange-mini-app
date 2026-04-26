@@ -98,8 +98,10 @@ export default async function handler(req, res) {
       `Платформа: ${platform || '—'} · Telegram ${tgVersion || '—'}`,
     ].filter(Boolean).join('\n');
 
-    if (GROUP_ID && GENERAL_THREAD_ID) {
-      await tgSend(GROUP_ID, msg, GENERAL_THREAD_ID);
+    if (GROUP_ID) {
+      // Для General-топика отправляем без thread_id
+      const r = await tgSend(GROUP_ID, msg, null);
+      console.log('TG SEND result:', JSON.stringify(r));
     }
 
     await logToSheet({
