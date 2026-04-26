@@ -178,16 +178,6 @@
     color: white; padding: 10px 20px; font-size: 13px; font-family: 'Inter', sans-serif; cursor: pointer; }
 </style>
 <body>
-<!-- NOT-IN-TELEGRAM SCREEN -->
-<div id="not-tg-screen" style="display:none; position:fixed; inset:0; z-index:9999; background:linear-gradient(135deg,#0f0f13 0%,#16213e 50%,#0f3460 100%); color:#fff; padding:32px; flex-direction:column; align-items:center; justify-content:center; text-align:center; font-family:'Inter',sans-serif;">
-  <div style="font-size:64px; margin-bottom:16px;">💱</div>
-  <div style="font-family:'Unbounded',sans-serif; font-size:28px; font-weight:700; background:linear-gradient(135deg,#4f8ef7,#6c63ff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:8px;">VietChange</div>
-  <div style="font-size:13px; color:#888; margin-bottom:32px;">Обмен валют · Вьетнам</div>
-  <div style="font-size:18px; font-weight:600; margin-bottom:12px; max-width:320px;">Откройте обменник в Telegram</div>
-  <div style="font-size:14px; color:#aaa; max-width:320px; line-height:1.5; margin-bottom:32px;">Для безопасного оформления заявки используйте наш бот в Telegram</div>
-  <a href="https://t.me/VietMoneyBot" style="display:block; background:linear-gradient(135deg,#4f8ef7,#6c63ff); color:#fff; text-decoration:none; padding:16px 32px; border-radius:14px; font-size:15px; font-weight:700; font-family:'Unbounded',sans-serif; letter-spacing:.02em; box-shadow:0 4px 20px rgba(79,142,247,.4);">📱 Открыть в Telegram</a>
-  <div style="font-size:12px; color:#666; margin-top:24px;">@VietMoneyBot</div>
-</div>
 
 <!-- LOADING SCREEN -->
 <div id="loading-screen">
@@ -440,14 +430,9 @@
 </div>
 
 <script>
-  // Проверка что открыто в Telegram
-if (!window.Telegram?.WebApp?.initData) {
-  document.getElementById('not-tg-screen').style.display = 'flex';
-  document.body.style.overflow = 'hidden';
-}
 // ─── VERCEL API CONFIG ────────────────────────────────────────
 // ⚠️ Замените на URL вашего Vercel проекта после деплоя
-const VERCEL_API_URL = 'https://viet-change-mini-app.vercel.app/api/order';
+const VERCEL_API_URL = 'ВСТАВЬТЕ_URL_VERCEL_СЮДА/api/order';
 // Пример: 'https://vietchange-api.vercel.app/api/order'
 
 // ─── GOOGLE SHEETS CONFIG (для курсов) ───────────────────────
@@ -609,13 +594,17 @@ function getRubEquiv(amount, currency) {
 }
 
 function applyRateLogic(baseRate, rubEquiv, toCurrency) {
-  if (!rubEquiv || rubEquiv <= 0) return { rate: baseRate, commission: 0, note: '', msg: '' };
-  let rate = baseRate, commission = 0, note = '', msg = '';
+  if (!rubEquiv || rubEquiv <= 0) return { rate: baseRate, note: '', msg: '' };
+  let rate = baseRate, note = '', msg = '';
+  // Комиссия теперь зашита в курс (коэффициент)
   if (rubEquiv < 15000) {
-    commission = 250;
+    // Комиссия 250 ₽ -> снижаем курс пропорционально
+    const factor = Math.max(0, 1 - 250 / rubEquiv);
+    rate = baseRate * factor;
     msg = 'При обмене такой суммы курс менее выгодный. При увеличении суммы от 15.000 ₽ условия будут лучше.';
   } else if (rubEquiv < 20000) {
-    commission = 180;
+    const factor = Math.max(0, 1 - 180 / rubEquiv);
+    rate = baseRate * factor;
     msg = 'Курс на эту сумму чуть ниже основного. При обмене от 20.000 ₽ курс будет значительно выгоднее.';
   } else if (rubEquiv < 100000) {
     msg = 'Готовы сделать обмен в ближайшее время.';
@@ -637,7 +626,20 @@ function applyRateLogic(baseRate, rubEquiv, toCurrency) {
     msg = 'Отличная сумма. Вам будет предложен индивидуальный курс.';
     note = '⭐ Индивидуальный';
   }
-  return { rate, commission, note, msg };
+  // Округляем курс по правилам отображения валюты
+  rate = roundRate(rate, toCurrency);
+  return { rate, note, msg };
+}
+
+// Округление курса для отображения (зависит от целевой валюты)
+function roundRate(rate, toCurrency) {
+  if (toCurrency === 'VND' || toCurrency === 'VND_b') return Math.round(rate);
+  if (toCurrency === 'USDT') return Math.round(rate * 10) / 10;
+  if (toCurrency === 'RUB_b') return Math.round(rate * 10) / 10;
+  if (toCurrency === 'KZT_b') return Math.round(rate * 10) / 10;
+  if (toCurrency === 'USD' || toCurrency === 'EUR') return Math.round(rate * 10) / 10;
+  if (toCurrency === 'THB_b') return Math.round(rate * 10) / 10;
+  return Math.round(rate * 100) / 100;
 }
 
 function roundAmount(amount, currency) {
@@ -787,18 +789,14 @@ function onAmountChange(source) {
   let amountFrom = parseFloat(document.getElementById('input-from').value) || 0;
   let amountTo = parseFloat(document.getElementById('input-to').value) || 0;
   const rubEquiv = getRubEquiv(source === 'from' ? amountFrom : (amountTo / baseRate), from);
-  const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to);
-  // Commission in target currency
-  const commInTo = commission > 0 ? (commission / (RATES['RUB_b_'+to] || (1/RATES[to+'_RUB_b']) || 0)) : 0;
+  const { rate, note, msg } = applyRateLogic(baseRate, rubEquiv, to);
   if (source === 'from' && amountFrom > 0) {
     let result = amountFrom * rate;
-    if (commission > 0 && commInTo > 0) result -= commInTo;
     result = roundAmount(result, to);
     document.getElementById('input-to').value = result > 0 ? result : '';
     state.amountFrom = amountFrom; state.amountTo = result;
   } else if (source === 'to' && amountTo > 0) {
     let needed = amountTo / rate;
-    if (commission > 0 && commInTo > 0) needed = (amountTo + commInTo) / rate;
     needed = roundAmount(needed, from);
     document.getElementById('input-from').value = needed > 0 ? needed : '';
     state.amountFrom = needed; state.amountTo = amountTo;
@@ -808,7 +806,6 @@ function onAmountChange(source) {
   rc.classList.remove('hidden');
   document.getElementById('rate-text').textContent = `Курс на момент заявки: 1 ${from.replace('_b','').replace('_c','')} = ${formatNum(rate)} ${to.replace('_b','').replace('_c','')}${note ? ' · '+note : ''}`;
   let rn = '';
-  if (commission > 0) rn = `Комиссия: ${commission} ₽`;
   if (rubEquiv >= 1200000) rn = 'Сумма приблизительная. Вам будет предложен индивидуальный курс';
   if (ratesLoadedAt) {
     const t = ratesLoadedAt.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
@@ -822,8 +819,8 @@ function onAmountChange(source) {
     comments.push(`<div class="comment-box ${cls} mt6">${msg}</div>`);
   }
   // Currency-specific
-  if (from === 'USD') comments.push('<div class="comment-box comment-info mt6">💵 Курс действует на купюры номиналом 100$ нового образца в отличном состоянии без дефектов и надписей.</div>');
-  if (from === 'EUR') comments.push('<div class="comment-box comment-info mt6">💶 Курс действует на купюры номиналом 100€ и 200€ нового образца в отличном состоянии без дефектов и надписей.</div>');
+  if (to === 'USD') comments.push('<div class="comment-box comment-info mt6">💵 Курс действует на купюры номиналом 100$ нового образца в отличном состоянии без дефектов и надписей.</div>');
+  if (to === 'EUR') comments.push('<div class="comment-box comment-info mt6">💶 Курс действует на купюры номиналом 100€ и 200€ нового образца в отличном состоянии без дефектов и надписей.</div>');
   if (from === 'USDT' || to === 'USDT') comments.push('<div class="comment-box comment-warn mt6">⚠️ Принимаем только «белые» USDT. Не используйте Garantex, Bitpapa, WEX и др. Возможна AML-проверка кошелька.</div>');
   document.getElementById('comments-wrap').innerHTML = comments.join('');
   checkSubmitReady();
@@ -893,9 +890,9 @@ function showBankInstruction() {
   const el = document.getElementById('bank-instruction');
   el.classList.remove('hidden');
   if (bank === 'Vietcombank') {
-    el.innerHTML = '<strong>📋 Инструкция Vietcombank</strong>1. Подойдите к банкомату Vietcombank.<br>2. Нажмите кнопку вызова QRкода.<br>3. Выбрать нужный язык.<br>4. Появившийся QR отправьте в чат.<br>5. Введите отправленный нами пин код.<br>6. Делее на все нажимайте "Ok" / "Confirm".<br>7. Заберите наличные 💴.';
+    el.innerHTML = '<strong>📋 Инструкция Vietcombank</strong>1. Подойдите к банкомату Vietcombank.<br>2. Нажмите «Rút tiền» (Снятие наличных).<br>3. Введите полученный от нас код или отсканируйте QR.<br>4. Введите сумму, кратную 100.000 VND.<br>5. Заберите деньги и чек.';
   } else {
-    el.innerHTML = '<strong>📋 Инструкция BIDV</strong>1. Подойдите к банкомату BIDV.<br>2. Нажмите кнопку вызова QRкода.<br>3. Выбрать нужный язык.<br>4. Появившийся QR отправьте в чат.<br>5. Введите отправленный нами пин код.<br>6. Делее на все нажимайте "Ok" / "Confirm".<br>7. Заберите наличные 💴.';
+    el.innerHTML = '<strong>📋 Инструкция BIDV</strong>1. Подойдите к банкомату BIDV.<br>2. Выберите «Cardless withdrawal».<br>3. Введите код транзакции, отправленный нами.<br>4. Введите OTP-код из SMS.<br>5. Заберите наличные.';
   }
 }
 
@@ -908,12 +905,20 @@ function selectDate(el, val) {
 }
 
 function getVNTime() {
-  const now = new Date();
-  const vn = new Date(now.getTime() + (7 * 3600000) - (now.getTimezoneOffset() * 60000));
-  return vn;
+  // Получаем текущее время Вьетнама (Asia/Ho_Chi_Minh, GMT+7) корректно
+  // независимо от часового пояса устройства
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+  const parts = fmt.formatToParts(new Date());
+  const hh = parseInt(parts.find(p => p.type === 'hour').value);
+  const mm = parseInt(parts.find(p => p.type === 'minute').value);
+  // Возвращаем объект с часами и минутами
+  return { getHours: () => hh, getMinutes: () => mm };
 }
 
-var TIME_SLOTS = Array.from({length:28}, (_,i) => {
+const TIME_SLOTS = Array.from({length:28}, (_,i) => {
   const h = 8 + Math.floor(i/2), m = (i%2)*30;
   const h2 = 8 + Math.floor((i+1)/2), m2 = ((i+1)%2)*30;
   const fmt = (h,m) => `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
@@ -931,12 +936,36 @@ function updateTimeSlider() {
 
 function setNearestTime() {
   const vn = getVNTime();
-  const totalMin = vn.getHours() * 60 + vn.getMinutes() + 30;
-  const rounded = Math.ceil(totalMin / 30) * 30;
-  const slot = Math.max(0, Math.min(27, Math.round((rounded - 8*60) / 30)));
+  const curMin = vn.getHours() * 60 + vn.getMinutes();
+  const startMin = 8 * 60;     // 08:00
+  const endMin   = 21 * 60 + 30; // 21:30 (начало последнего слота)
+  
+  // Если до 8:00 утра — берём первый слот сегодня
+  if (curMin < startMin) {
+    document.getElementById('time-slider').value = 0;
+    document.querySelectorAll('.date-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+    state.date = 'today';
+    document.getElementById('custom-date-wrap').classList.add('hidden');
+    updateTimeSlider();
+    return;
+  }
+  
+  // Если позже 21:30 — переключаем на завтра, первый слот
+  if (curMin > endMin) {
+    document.getElementById('time-slider').value = 0;
+    document.querySelectorAll('.date-tab').forEach((t,i) => t.classList.toggle('active', i===1));
+    state.date = 'tomorrow';
+    document.getElementById('custom-date-wrap').classList.add('hidden');
+    updateTimeSlider();
+    return;
+  }
+  
+  // Иначе — ближайший слот через ~30 минут от текущего времени
+  const targetMin = curMin + 30;
+  const rounded = Math.ceil(targetMin / 30) * 30;
+  const slot = Math.max(0, Math.min(27, Math.round((rounded - startMin) / 30)));
   document.getElementById('time-slider').value = slot;
   updateTimeSlider();
-  // Set today
   document.querySelectorAll('.date-tab').forEach((t,i) => t.classList.toggle('active', i===0));
   state.date = 'today';
   document.getElementById('custom-date-wrap').classList.add('hidden');
@@ -1070,7 +1099,6 @@ async function submitOrder() {
 
   // Payload для Vercel
   const payload = {
-    initData: window.Telegram?.WebApp?.initData || '',
     userId, username, firstName,
     fromLabel, toLabel, fromCode, toCode,
     amtFrom: formatNum(d.amtFrom),
@@ -1113,7 +1141,7 @@ async function submitOrder() {
     d.location ? `Место: ${d.location}` : null,
     d.comment ? `Комментарий: ${d.comment}` : null,
     ``,
-    `Ваша заявка уже в обработке. Ожидайте уведомление 🔔`,
+    `Я сообщу, когда всё будет готово. 🛵`,
     orderNum ? `\n№ заявки: ${orderNum}` : null,
   ].filter(Boolean).join('\n');
 
