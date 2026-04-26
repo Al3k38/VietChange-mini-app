@@ -301,6 +301,8 @@
         <div class="form-row">
           <div class="form-label">Улица / район / отель</div>
           <input type="text" class="form-input" id="rep-street" placeholder="Например: Scenia Bay, лобби">
+          <button type="button" onclick="getMyLocation('rep-street')" style="margin-top:8px;background:linear-gradient(135deg,#4f8ef7,#6c63ff);border:none;border-radius:10px;color:white;padding:8px 14px;font-size:13px;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;">📍 Моя геопозиция</button>
+          <div id="rep-street-status" style="font-size:11px;color:var(--muted);margin-top:6px;"></div>
         </div>
         <div class="form-row" style="border-bottom:none">
           <div class="form-label">Комментарий к месту</div>
@@ -342,6 +344,8 @@
       <div class="form-row">
         <div class="form-label">Ссылка на Google Maps / адрес</div>
         <input type="text" class="form-input" id="del-address" placeholder="https://maps.app.goo.gl/ или адрес">
+        <button type="button" onclick="getMyLocation('del-address')" style="margin-top:8px;background:linear-gradient(135deg,#4f8ef7,#6c63ff);border:none;border-radius:10px;color:white;padding:8px 14px;font-size:13px;font-weight:600;font-family:'Inter',sans-serif;cursor:pointer;">📍 Моя геопозиция</button>
+        <div id="del-address-status" style="font-size:11px;color:var(--muted);margin-top:6px;"></div>
       </div>
       <div class="form-row" style="border-bottom:none">
         <div class="form-label">Ориентир / отель / пояснение</div>
@@ -936,6 +940,55 @@ function selectDate(el, val) {
   document.getElementById('custom-date-wrap').classList.toggle('hidden', val !== 'custom');
 }
 
+// ─── ПОЛУЧЕНИЕ ГЕОПОЗИЦИИ ЧЕРЕЗ TELEGRAM ─────────────────────
+function getMyLocation(targetInputId) {
+  const statusEl = document.getElementById(targetInputId + '-status');
+  const inputEl = document.getElementById(targetInputId);
+  if (!statusEl || !inputEl) return;
+
+  statusEl.style.color = 'var(--muted)';
+  statusEl.textContent = '⏳ Запрашиваем геопозицию...';
+
+  try {
+    const lm = window.Telegram?.WebApp?.LocationManager;
+    if (!lm) {
+      statusEl.style.color = '#fcd34d';
+      statusEl.textContent = '⚠️ Геолокация недоступна. Обновите Telegram до последней версии или введите адрес вручную.';
+      return;
+    }
+
+    lm.init(() => {
+      if (!lm.isLocationAvailable) {
+        statusEl.style.color = '#fcd34d';
+        statusEl.textContent = '⚠️ Геолокация недоступна на этом устройстве. Введите адрес вручную.';
+        return;
+      }
+      if (lm.isAccessDenied) {
+        statusEl.style.color = '#ef4444';
+        statusEl.textContent = '❌ Доступ к геолокации запрещён. Разрешите в настройках Telegram.';
+        return;
+      }
+
+      lm.getLocation((loc) => {
+        if (!loc) {
+          statusEl.style.color = '#ef4444';
+          statusEl.textContent = '❌ Не удалось получить геопозицию. Попробуйте ещё раз или введите вручную.';
+          return;
+        }
+        const lat = loc.latitude.toFixed(6);
+        const lng = loc.longitude.toFixed(6);
+        const url = `https://maps.google.com/?q=${lat},${lng}`;
+        inputEl.value = url;
+        statusEl.style.color = '#86efac';
+        statusEl.textContent = `✅ Геопозиция получена: ${lat}, ${lng}`;
+      });
+    });
+  } catch (e) {
+    statusEl.style.color = '#ef4444';
+    statusEl.textContent = '❌ Ошибка получения геопозиции: ' + e.message;
+  }
+}
+  
 function getVNTime() {
   // Получаем время Вьетнама (Asia/Ho_Chi_Minh) корректно независимо от часового пояса устройства
   const fmt = new Intl.DateTimeFormat('en-GB', {
