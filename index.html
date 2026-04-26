@@ -807,8 +807,8 @@ function onAmountChange(source) {
     comments.push(`<div class="comment-box ${cls} mt6">${msg}</div>`);
   }
   // Currency-specific
-  if (to === 'USD') comments.push('<div class="comment-box comment-info mt6">💵 Курс действует на купюры номиналом 100$ нового образца в отличном состоянии без дефектов и надписей.</div>');
-  if (to === 'EUR') comments.push('<div class="comment-box comment-info mt6">💶 Курс действует на купюры номиналом 100€ и 200€ нового образца в отличном состоянии без дефектов и надписей.</div>');
+  if (from === 'USD') comments.push('<div class="comment-box comment-info mt6">💵 Курс действует на купюры номиналом 100$ нового образца в отличном состоянии без дефектов и надписей.</div>');
+  if (from === 'EUR') comments.push('<div class="comment-box comment-info mt6">💶 Курс действует на купюры номиналом 100€ и 200€ нового образца в отличном состоянии без дефектов и надписей.</div>');
   if (from === 'USDT' || to === 'USDT') comments.push('<div class="comment-box comment-warn mt6">⚠️ Принимаем только «белые» USDT. Не используйте Garantex, Bitpapa, WEX и др. Возможна AML-проверка кошелька.</div>');
   document.getElementById('comments-wrap').innerHTML = comments.join('');
   checkSubmitReady();
