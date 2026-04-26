@@ -967,8 +967,8 @@ function updateTimeSlider() {
 function setNearestTime() {
   const vn = getVNTime();
   const curMin = vn.getHours() * 60 + vn.getMinutes();
-  const startMin = 8 * 60;       // 08:00
-  const endMin   = 21 * 60 + 30; // 21:30 (начало последнего слота)
+  const startMin = 8 * 60;       // 08:00 — начало первого слота
+  const endMin   = 21 * 60 + 30; // 21:30 — начало последнего слота
 
   // Если до 8:00 утра — первый слот сегодня
   if (curMin < startMin) {
@@ -990,10 +990,12 @@ function setNearestTime() {
     return;
   }
 
-  // Иначе — ближайший слот через ~30 минут от текущего времени
-  const targetMin = curMin + 30;
-  const rounded = Math.ceil(targetMin / 30) * 30;
+  // Округляем текущее время ВВЕРХ до ближайшего 30-минутного интервала
+  // 18:12 → 18:30 (слот 18:30-19:00)
+  // 16:41 → 17:00 (слот 17:00-17:30)
+  const rounded = Math.ceil(curMin / 30) * 30;
   const slot = Math.max(0, Math.min(27, Math.round((rounded - startMin) / 30)));
+
   document.getElementById('time-slider').value = slot;
   updateTimeSlider();
   document.querySelectorAll('.date-tab').forEach((t,i) => t.classList.toggle('active', i===0));
