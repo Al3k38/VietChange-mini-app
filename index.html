@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VietChange — Обмен валют</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f13;
+    --card: #1a1a22;
+    --card2: #22222e;
+    --border: #2e2e3e;
+    --accent: #4f8ef7;
+    --accent2: #6c63ff;
+    --green: #22c55e;
+    --yellow: #f59e0b;
+    --red: #ef4444;
+    --text: #f0f0f8;
+    --muted: #888899;
+    --input-bg: #131318;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; font-size: 14px; min-height: 100vh; }
+  
+  /* PAGES */
+  .page { display: none; padding: 0 0 100px 0; animation: fadeIn .25s ease; }
+  .page.active { display: block; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
+
+  /* HEADER */
+  .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); padding: 20px 16px 16px; position: sticky; top: 0; z-index: 100; border-bottom: 1px solid var(--border); }
+  .header-title { font-family: 'Unbounded', sans-serif; font-size: 18px; font-weight: 700; background: linear-gradient(135deg, #4f8ef7, #6c63ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .header-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* SECTION */
+  .section { margin: 12px 12px 0; }
+  .section-title { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; padding-left: 4px; }
+  .card { background: var(--card); border-radius: 16px; border: 1px solid var(--border); overflow: hidden; }
+
+  /* CURRENCY PAIR */
+  .pair-row { display: flex; gap: 8px; align-items: stretch; }
+  .pair-block { flex: 1; background: var(--card); border-radius: 16px; border: 1px solid var(--border); padding: 12px; }
+  .pair-label { font-size: 10px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing:.06em; }
+  .currency-select { width: 100%; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 8px 10px; font-size: 13px; font-family: 'Inter', sans-serif; appearance: none; cursor: pointer; }
+  .currency-select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,142,247,.2); }
+  .amount-input { width: 100%; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 8px 10px; font-size: 16px; font-weight: 600; font-family: 'Inter', sans-serif; margin-top: 6px; }
+  .amount-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,142,247,.2); }
+  .amount-input::placeholder { color: var(--muted); font-weight: 400; font-size: 14px; }
+
+  /* SWAP BUTTON */
+  .swap-col { display: flex; align-items: center; justify-content: center; padding-top: 22px; }
+  .swap-btn { width: 36px; height: 36px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform .2s; flex-shrink: 0; }
+  .swap-btn:active { transform: rotate(180deg) scale(.9); }
+  .swap-btn svg { width: 18px; height: 18px; fill: white; }
+
+  /* EXTRA CURRENCY FIELDS */
+  .extra-field { margin-top: 8px; }
+  .extra-field input { width: 100%; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); padding: 8px 10px; font-size: 13px; font-family: 'Inter', sans-serif; }
+  .extra-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,142,247,.2); }
+  .extra-field input::placeholder { color: var(--muted); }
+
+  /* RATE DISPLAY */
+  .rate-card { background: linear-gradient(135deg, rgba(79,142,247,.1), rgba(108,99,255,.1)); border: 1px solid rgba(79,142,247,.3); border-radius: 14px; padding: 12px 14px; }
+  .rate-main { font-size: 13px; font-weight: 600; color: var(--accent); }
+  .rate-note { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* COMMENTS */
+  .comment-box { border-radius: 12px; padding: 10px 12px; font-size: 12px; margin-top: 8px; }
+  .comment-info { background: rgba(79,142,247,.12); border: 1px solid rgba(79,142,247,.25); color: #93b8ff; }
+  .comment-warn { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.3); color: #fcd34d; }
+  .comment-success { background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.3); color: #86efac; }
+
+  /* RECEIVE METHOD */
+  .method-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .method-tab { flex: 1; min-width: 70px; background: var(--card2); border: 1.5px solid var(--border); border-radius: 12px; padding: 8px 6px; text-align: center; cursor: pointer; font-size: 12px; font-weight: 500; transition: all .2s; user-select: none; }
+  .method-tab.active { background: rgba(79,142,247,.15); border-color: var(--accent); color: var(--accent); }
+  .method-tab .method-icon { font-size: 18px; display: block; margin-bottom: 2px; }
+
+  /* CHECKBOX */
+  .checkbox-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px; cursor: pointer; }
+  .checkbox-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; margin-top: 1px; }
+  .checkbox-row span { font-size: 13px; line-height: 1.4; }
+
+  /* FORM FIELD */
+  .form-row { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .form-row:last-child { border-bottom: none; }
+  .form-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .form-input { width: 100%; background: transparent; border: none; color: var(--text); font-size: 14px; font-family: 'Inter', sans-serif; padding: 0; }
+  .form-input:focus { outline: none; }
+  .form-input::placeholder { color: var(--muted); }
+  .form-select { width: 100%; background: transparent; border: none; color: var(--text); font-size: 14px; font-family: 'Inter', sans-serif; appearance: none; cursor: pointer; padding: 0; }
+  .form-select:focus { outline: none; }
+
+  /* TIME PICKER */
+  .time-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .time-option:last-child { border-bottom: none; }
+  .time-radio { width: 18px; height: 18px; accent-color: var(--accent); flex-shrink: 0; }
+  .time-option.selected { background: rgba(79,142,247,.08); }
+  .time-now-btn { width: 100%; background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; border-radius: 12px; color: white; padding: 12px; font-size: 14px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer; }
+
+  /* DATE SELECTOR */
+  .date-tabs { display: flex; gap: 6px; }
+  .date-tab { flex: 1; background: var(--card2); border: 1.5px solid var(--border); border-radius: 10px; padding: 8px 4px; text-align: center; cursor: pointer; font-size: 12px; transition: all .2s; }
+  .date-tab.active { background: rgba(79,142,247,.15); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+  /* TIME SLIDER */
+  .time-slider-wrap { padding: 12px; }
+  .time-slider { width: 100%; accent-color: var(--accent); cursor: pointer; }
+  .time-display { text-align: center; font-size: 22px; font-family: 'Unbounded', sans-serif; font-weight: 600; color: var(--accent); margin: 8px 0 4px; }
+  .time-display-label { text-align: center; font-size: 11px; color: var(--muted); }
+
+  /* BANK INSTRUCTION */
+  .bank-instr { background: var(--card2); border-radius: 12px; border: 1px solid var(--border); padding: 12px; font-size: 12px; line-height: 1.6; color: var(--muted); margin-top: 8px; }
+  .bank-instr strong { color: var(--text); display: block; margin-bottom: 6px; font-size: 13px; }
+
+  /* TEXTAREA */
+  .comment-textarea { width: 100%; background: var(--input-bg); border: 1px solid var(--border); border-radius: 12px; color: var(--text); padding: 10px 12px; font-size: 13px; font-family: 'Inter', sans-serif; resize: none; height: 80px; }
+  .comment-textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,142,247,.2); }
+  .comment-textarea::placeholder { color: var(--muted); }
+  .char-count { font-size: 11px; color: var(--muted); text-align: right; margin-top: 4px; }
+
+  /* SUBMIT BUTTON */
+  .submit-area { position: fixed; bottom: 0; left: 0; right: 0; padding: 12px 16px; background: linear-gradient(to top, var(--bg) 70%, transparent); z-index: 50; }
+  .submit-btn { width: 100%; background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; border-radius: 14px; color: white; padding: 15px; font-size: 15px; font-weight: 700; font-family: 'Unbounded', sans-serif; cursor: pointer; letter-spacing: .02em; transition: opacity .2s, transform .1s; }
+  .submit-btn:active { transform: scale(.98); opacity: .9; }
+  .submit-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* CONFIRM PAGE */
+  .confirm-header { text-align: center; padding: 24px 16px 16px; }
+  .confirm-icon { font-size: 48px; margin-bottom: 8px; }
+  .confirm-title { font-family: 'Unbounded', sans-serif; font-size: 18px; font-weight: 700; }
+  .confirm-sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .confirm-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 10px 14px; border-bottom: 1px solid var(--border); gap: 12px; }
+  .confirm-row:last-child { border-bottom: none; }
+  .confirm-key { font-size: 12px; color: var(--muted); flex-shrink: 0; min-width: 110px; }
+  .confirm-val { font-size: 13px; font-weight: 600; text-align: right; word-break: break-all; }
+  .confirm-amount { font-size: 20px; font-family: 'Unbounded', sans-serif; font-weight: 700; color: var(--accent); }
+  .action-btns { display: flex; gap: 10px; padding: 0 12px; margin-top: 12px; margin-bottom: 120px; }
+  .btn-confirm { flex: 2; background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; border-radius: 14px; color: white; padding: 14px; font-size: 14px; font-weight: 700; font-family: 'Inter', sans-serif; cursor: pointer; }
+  .btn-edit { flex: 1; background: var(--card2); border: 1.5px solid var(--border); border-radius: 14px; color: var(--text); padding: 14px; font-size: 14px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer; }
+
+  /* SUCCESS PAGE */
+  .success-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh; padding: 24px; text-align: center; }
+  .success-icon { font-size: 64px; margin-bottom: 16px; animation: pop .4s ease; }
+  @keyframes pop { 0% { transform: scale(0) } 80% { transform: scale(1.15) } 100% { transform: scale(1) } }
+  .success-title { font-family: 'Unbounded', sans-serif; font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+  .success-sub { font-size: 14px; color: var(--muted); line-height: 1.6; max-width: 280px; }
+  .success-msg { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; margin-top: 20px; width: 100%; max-width: 360px; text-align: left; font-size: 12px; color: var(--muted); white-space: pre-wrap; line-height: 1.8; }
+
+  /* UTILS */
+  .mt6 { margin-top: 6px; }
+  .mt8 { margin-top: 8px; }
+  .hidden { display: none !important; }
+  .divider { height: 1px; background: var(--border); margin: 0; }
+  
+  select option { background: #1a1a22; }
+  input[type=date] { color-scheme: dark; }
+  input[type=date]::-webkit-calendar-picker-indicator { filter: invert(.6); }
+</style>
+</head>
+<style>
+  /* LOADING SCREEN */
+  #loading-screen {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 9999; gap: 16px;
+  }
+  .loader-logo { font-family: 'Unbounded', sans-serif; font-size: 22px; font-weight: 700;
+    background: linear-gradient(135deg, #4f8ef7, #6c63ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .loader-spinner { width: 36px; height: 36px; border: 3px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg) } }
+  .loader-text { font-size: 13px; color: var(--muted); }
+  .loader-error { font-size: 13px; color: var(--red); text-align: center; max-width: 260px; line-height: 1.5; }
+  .loader-retry { margin-top: 8px; background: var(--accent); border: none; border-radius: 10px;
+    color: white; padding: 10px 20px; font-size: 13px; font-family: 'Inter', sans-serif; cursor: pointer; }
+</style>
+<body>
+<!-- NOT-IN-TELEGRAM SCREEN -->
+<div id="not-tg-screen" style="display:none; position:fixed; inset:0; z-index:9999; background:linear-gradient(135deg,#0f0f13 0%,#16213e 50%,#0f3460 100%); color:#fff; padding:32px; flex-direction:column; align-items:center; justify-content:center; text-align:center; font-family:'Inter',sans-serif;">
+  <div style="font-size:64px; margin-bottom:16px;">💱</div>
+  <div style="font-family:'Unbounded',sans-serif; font-size:28px; font-weight:700; background:linear-gradient(135deg,#4f8ef7,#6c63ff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:8px;">VietChange</div>
+  <div style="font-size:13px; color:#888; margin-bottom:32px;">Обмен валют · Вьетнам</div>
+  <div style="font-size:18px; font-weight:600; margin-bottom:12px; max-width:320px;">Откройте обменник в Telegram</div>
+  <div style="font-size:14px; color:#aaa; max-width:320px; line-height:1.5; margin-bottom:32px;">Для безопасного оформления заявки используйте наш бот в Telegram</div>
+  <a href="https://t.me/VietMoneyBot" style="display:block; background:linear-gradient(135deg,#4f8ef7,#6c63ff); color:#fff; text-decoration:none; padding:16px 32px; border-radius:14px; font-size:15px; font-weight:700; font-family:'Unbounded',sans-serif; letter-spacing:.02em; box-shadow:0 4px 20px rgba(79,142,247,.4);">📱 Открыть в Telegram</a>
+  <div style="font-size:12px; color:#666; margin-top:24px;">@VietMoneyBot</div>
+</div>
+
+<!-- LOADING SCREEN -->
+<div id="loading-screen">
+  <div class="loader-logo">💱 VietChange</div>
+  <div class="loader-spinner"></div>
+  <div class="loader-text" id="loader-text">Загружаем актуальные курсы...</div>
+</div>
+
+<!-- PAGE 1: FORM -->
+<div class="page active" id="page-form">
+
+  <div class="header">
+    <div class="header-title">💱 VietChange</div>
+    <div class="header-sub">Обмен валют · Вьетнам</div>
+  </div>
+
+  <!-- CURRENCY PAIR -->
+  <div class="section" style="margin-top:14px">
+    <div class="section-title">Валютная пара</div>
+    <div class="pair-row">
+      <div class="pair-block">
+        <div class="pair-label">Отдаёте</div>
+        <select class="currency-select" id="sel-from" onchange="onPairChange()">
+          <optgroup label="Безналичные">
+            <option value="RUB_b">🇷🇺 RUB (безнал)</option>
+            <option value="USDT">💵 USDT</option>
+            <option value="VND_b">🇻🇳 VND (безнал)</option>
+            <option value="KZT_b">🇰🇿 KZT (безнал)</option>
+            <option value="THB_b">🇹🇭 THB (безнал)</option>
+            <option value="OTHER_b">🌐 Другая (безнал)</option>
+          </optgroup>
+          <optgroup label="Наличные">
+            <option value="USD">🇺🇸 USD</option>
+            <option value="VND">🇻🇳 VND</option>
+            <option value="EUR">🇪🇺 EUR</option>
+            <option value="OTHER_c">💱 Другая (наличные)</option>
+          </optgroup>
+        </select>
+        <div id="extra-from" class="extra-field hidden">
+          <input type="text" id="extra-from-currency" placeholder="Название валюты" class="form-input" style="background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;" oninput="onAmountChange('from')">
+          <div id="extra-from-bank-wrap" class="extra-field hidden">
+            <input type="text" id="extra-from-bank" placeholder="Название банка" class="form-input mt6" style="background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;margin-top:6px;">
+          </div>
+        </div>
+        <input type="number" class="amount-input mt6" id="input-from" placeholder="Сумма" oninput="onAmountChange('from')" inputmode="decimal">
+      </div>
+      <div class="swap-col">
+        <button class="swap-btn" onclick="swapCurrencies()">
+          <svg viewBox="0 0 24 24"><path d="M7 4l-4 4h3v8h2V8h3L7 4zM17 20l4-4h-3V8h-2v8h-3l4 4z"/></svg>
+        </button>
+      </div>
+      <div class="pair-block">
+        <div class="pair-label">Получаете</div>
+        <select class="currency-select" id="sel-to" onchange="onPairChange()">
+          <optgroup label="Безналичные">
+            <option value="VND_b">🇻🇳 VND (безнал)</option>
+            <option value="RUB_b">🇷🇺 RUB (безнал)</option>
+            <option value="USDT">💵 USDT</option>
+            <option value="KZT_b">🇰🇿 KZT (безнал)</option>
+            <option value="THB_b">🇹🇭 THB (безнал)</option>
+            <option value="OTHER_b">🌐 Другая (безнал)</option>
+          </optgroup>
+          <optgroup label="Наличные">
+            <option value="VND">🇻🇳 VND</option>
+            <option value="USD">🇺🇸 USD</option>
+            <option value="EUR">🇪🇺 EUR</option>
+            <option value="OTHER_c">💱 Другая (наличные)</option>
+          </optgroup>
+        </select>
+        <div id="extra-to" class="extra-field hidden">
+          <input type="text" id="extra-to-currency" placeholder="Название валюты" class="form-input" style="background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;" oninput="onAmountChange('from')">
+          <div id="extra-to-bank-wrap" class="extra-field hidden">
+            <input type="text" id="extra-to-bank" placeholder="Название банка" class="form-input mt6" style="background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;margin-top:6px;">
+          </div>
+        </div>
+        <input type="number" class="amount-input mt6" id="input-to" placeholder="Сумма" oninput="onAmountChange('to')" inputmode="decimal">
+      </div>
+    </div>
+  </div>
+
+  <!-- RATE & COMMENTS -->
+  <div class="section mt8">
+    <div id="rate-card" class="rate-card hidden">
+      <div class="rate-main" id="rate-text"></div>
+      <div class="rate-note" id="rate-note"></div>
+    </div>
+    <div id="comments-wrap"></div>
+  </div>
+
+  <!-- RECEIVE METHOD -->
+  <div class="section mt8" id="method-section">
+    <div class="section-title">Способ получения</div>
+    <div class="method-tabs" id="method-tabs"></div>
+  </div>
+
+  <!-- REPRESENTATIVE CHECKBOX (online) -->
+  <div class="section mt8 hidden" id="rep-section">
+    <div class="card">
+      <label class="checkbox-row" id="rep-label">
+        <input type="checkbox" id="rep-check" onchange="onRepCheck()">
+        <span>Присутствие нашего представителя на сделке</span>
+      </label>
+      <div id="rep-address" class="hidden" style="padding:0 12px 12px">
+        <div class="form-row">
+          <div class="form-label">Город</div>
+          <select class="form-select" id="rep-city">
+            <option value="Нячанг">Нячанг</option>
+            <option value="Дананг">Дананг</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-label">Улица / район / отель</div>
+          <input type="text" class="form-input" id="rep-street" placeholder="Например: Scenia Bay, лобби">
+        </div>
+        <div class="form-row" style="border-bottom:none">
+          <div class="form-label">Комментарий к месту</div>
+          <input type="text" class="form-input" id="rep-comment" placeholder="Любые пояснения">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ATM SECTION -->
+  <div class="section mt8 hidden" id="atm-section">
+    <div class="section-title">Банкомат</div>
+    <div class="card">
+      <div class="form-row">
+        <div class="form-label">Банк</div>
+        <select class="form-select" id="atm-bank" onchange="showBankInstruction()">
+          <option value="Vietcombank">Vietcombank</option>
+          <option value="BIDV">BIDV</option>
+        </select>
+      </div>
+    </div>
+    <div class="comment-box comment-info mt6" style="font-size:12px">
+      💳 Для получения через банкомат банковская карта не нужна. Вы отправляете фото QR-кода или просто вводите отправленный нами код.
+    </div>
+    <div id="bank-instruction" class="bank-instr hidden"></div>
+  </div>
+
+  <!-- DELIVERY SECTION -->
+  <div class="section mt8 hidden" id="delivery-section">
+    <div class="section-title">Доставка</div>
+    <div class="card">
+      <div class="form-row">
+        <div class="form-label">Город</div>
+        <select class="form-select" id="del-city">
+          <option value="Нячанг">Нячанг</option>
+          <option value="Дананг">Дананг</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-label">Ссылка на Google Maps / адрес</div>
+        <input type="text" class="form-input" id="del-address" placeholder="https://maps.app.goo.gl/ или адрес">
+      </div>
+      <div class="form-row" style="border-bottom:none">
+        <div class="form-label">Ориентир / отель / пояснение</div>
+        <input type="text" class="form-input" id="del-hint" placeholder="Название отеля, номер, ориентир">
+      </div>
+    </div>
+  </div>
+
+  <!-- TIME -->
+  <div class="section mt8" id="time-section">
+    <div class="section-title">Время получения</div>
+    <div class="card">
+      <div style="padding:12px">
+        <button class="time-now-btn" onclick="setNearestTime()">⚡ Ближайшее время</button>
+        <div style="margin-top:10px">
+          <div class="date-tabs" id="date-tabs">
+            <div class="date-tab active" data-d="today" onclick="selectDate(this,'today')">Сегодня</div>
+            <div class="date-tab" data-d="tomorrow" onclick="selectDate(this,'tomorrow')">Завтра</div>
+            <div class="date-tab" data-d="custom" onclick="selectDate(this,'custom')">Дата</div>
+          </div>
+          <div id="custom-date-wrap" class="hidden" style="margin-top:8px">
+            <input type="date" class="form-input" id="custom-date" style="background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:8px 10px;color:var(--text);font-size:14px;width:100%">
+          </div>
+        </div>
+      </div>
+      <div class="time-slider-wrap">
+        <div class="time-display" id="time-display">08:00–08:30</div>
+        <div class="time-display-label">Вьетнамское время (GMT+7)</div>
+        <input type="range" class="time-slider" id="time-slider" min="0" max="27" step="1" value="0" oninput="updateTimeSlider()">
+      </div>
+    </div>
+  </div>
+
+  <!-- REQUISITES -->
+  <div class="section mt8" id="requisites-section">
+    <div class="section-title">Реквизиты</div>
+    <div class="card" id="requisites-card"></div>
+  </div>
+
+  <!-- COMMENT -->
+  <div class="section mt8">
+    <div class="section-title">Комментарий к заказу</div>
+    <textarea class="comment-textarea" id="order-comment" maxlength="500" placeholder="Комментарий к заказу (например: ориентир для встречи, предпочтения по времени, дополнительные пожелания...)" oninput="updateCharCount()"></textarea>
+    <div class="char-count" id="char-count">0/500</div>
+    <div class="comment-box comment-info" style="margin-top:6px;font-size:11px">Если хотите добавить пояснения к заказу, заполните это поле.</div>
+  </div>
+
+  <!-- AGREE -->
+  <div class="section mt8" style="margin-bottom:8px">
+    <div class="card">
+      <label class="checkbox-row">
+        <input type="checkbox" id="agree-check" onchange="checkSubmitReady()">
+        <span>Согласен(на) с правилами обмена и подтверждаю корректность введённых данных</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="submit-area">
+    <button class="submit-btn" id="submit-btn" onclick="goToConfirm()" disabled>Перейти к подтверждению →</button>
+  </div>
+</div>
+
+<!-- PAGE 2: CONFIRM -->
+<div class="page" id="page-confirm">
+  <div class="header">
+    <div style="display:flex;align-items:center;gap:10px">
+      <button onclick="goBack()" style="background:none;border:none;color:var(--text);font-size:20px;cursor:pointer;padding:0">←</button>
+      <div>
+        <div class="header-title">Подтверждение</div>
+        <div class="header-sub">Проверьте данные заявки</div>
+      </div>
+    </div>
+  </div>
+  <div class="confirm-header">
+    <div class="confirm-icon">🔍</div>
+    <div class="confirm-title">Проверьте заявку</div>
+    <div class="confirm-sub">Убедитесь, что всё верно</div>
+  </div>
+  <div class="section">
+    <div class="card" id="confirm-details"></div>
+  </div>
+  <div class="action-btns">
+    <button class="btn-edit" onclick="goBack()">✏️ Исправить</button>
+    <button class="btn-confirm" onclick="submitOrder()">✅ Подтвердить</button>
+  </div>
+</div>
+
+<!-- PAGE 3: SUCCESS -->
+<div class="page" id="page-success">
+  <div class="success-wrap">
+    <div class="success-icon">🎉</div>
+    <div class="success-title">Заявка принята!</div>
+    <div class="success-sub">Наш оператор свяжется с вами в ближайшее время через Telegram</div>
+    <div class="success-msg" id="success-msg"></div>
+  </div>
+</div>
+
+<script>
+  // Проверка что открыто в Telegram
+if (!window.Telegram?.WebApp?.initData) {
+  document.getElementById('not-tg-screen').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+// ─── VERCEL API CONFIG ────────────────────────────────────────
+// ⚠️ Замените на URL вашего Vercel проекта после деплоя
+const VERCEL_API_URL = 'https://viet-change-mini-app.vercel.app/api/order';
+// Пример: 'https://vietchange-api.vercel.app/api/order'
+
+// ─── GOOGLE SHEETS CONFIG (для курсов) ───────────────────────
+// Замените SHEET_ID на ID вашей Google Таблицы
+// Таблица должна быть открыта для чтения (Все у кого есть ссылка → Читатель)
+const SHEET_ID = 'ВСТАВЬТЕ_ID_ТАБЛИЦЫ_СЮДА';
+const SHEET_NAME = 'Курсы';
+const SHEETS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+
+async function loadRatesFromSheets() {
+  try {
+    const res = await fetch(SHEETS_URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const csv = await res.text();
+    const lines = csv.trim().split('\n').slice(1); // skip header
+    const loaded = {};
+    for (const line of lines) {
+      const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+      const key = cols[0]; // column A: variable name
+      const val = parseFloat(cols[2]); // column C: rate value
+      if (key && !key.startsWith('__') && !isNaN(val)) {
+        loaded[key] = val;
+      }
+    }
+    return loaded;
+  } catch(e) {
+    console.error('Sheets load error:', e);
+    return null;
+  }
+}
+
+// Маппинг переменных таблицы → ключи RATES приложения
+function buildRatesFromSheets(raw) {
+  const r = {};
+  const g = (k) => raw[k] || null;
+  // RUB
+  if (g('RUB_VND'))  { r['RUB_b_VND'] = g('RUB_VND'); r['RUB_b_VND_b'] = g('RUB_VND'); }
+  if (g('RUB_USD'))  { r['RUB_b_USD'] = g('RUB_USD'); }
+  if (g('RUB_EUR'))  { r['RUB_b_EUR'] = g('RUB_EUR'); }
+  if (g('RUB_USDT')) { r['RUB_b_USDT'] = g('RUB_USDT'); }
+  // USD
+  if (g('USD_RUB'))  { r['USD_RUB_b'] = g('USD_RUB'); }
+  if (g('USD_VND'))  { r['USD_VND'] = g('USD_VND'); r['USD_VND_b'] = g('USD_VND'); }
+  if (g('USD_USDT')) { r['USD_USDT'] = g('USD_USDT'); }
+  if (g('USD_EUR'))  { r['USD_EUR'] = g('USD_EUR'); }
+  // EUR
+  if (g('EUR_RUB'))  { r['EUR_RUB_b'] = g('EUR_RUB'); }
+  if (g('EUR_VND'))  { r['EUR_VND'] = g('EUR_VND'); r['EUR_VND_b'] = g('EUR_VND'); }
+  if (g('EUR_USD'))  { r['EUR_USD'] = g('EUR_USD'); }
+  if (g('EUR_USDT')) { r['EUR_USDT'] = g('EUR_USDT'); }
+  // USDT
+  if (g('USDT_RUB')) { r['USDT_RUB_b'] = g('USDT_RUB'); }
+  if (g('USDT_VND')) { r['USDT_VND'] = g('USDT_VND'); r['USDT_VND_b'] = g('USDT_VND'); }
+  if (g('USDT_USD')) { r['USDT_USD'] = g('USDT_USD'); }
+  if (g('USDT_EUR')) { r['USDT_EUR'] = g('USDT_EUR'); }
+  // VND
+  if (g('VND_RUB'))  { r['VND_RUB_b'] = g('VND_RUB'); r['VND_b_RUB_b'] = g('VND_RUB'); }
+  if (g('VND_USD'))  { r['VND_USD'] = 1/g('VND_USD'); r['VND_b_USD'] = 1/g('VND_USD'); }
+  if (g('VND_EUR'))  { r['VND_EUR'] = 1/g('VND_EUR'); r['VND_b_EUR'] = 1/g('VND_EUR'); }
+  if (g('VND_USDT')) { r['VND_USDT'] = 1/g('VND_USDT'); r['VND_b_USDT'] = 1/g('VND_USDT'); }
+  r['VND_b_VND'] = 0.98; r['VND_VND_b'] = 0.98;
+  // KZT
+  if (g('KZT_RUB'))  { r['KZT_b_RUB_b'] = g('KZT_RUB'); }
+  if (g('KZT_VND'))  { r['KZT_b_VND'] = g('KZT_VND'); r['KZT_b_VND_b'] = g('KZT_VND'); }
+  if (g('KZT_USDT')) { r['KZT_b_USDT'] = g('KZT_USDT'); }
+  if (g('KZT_USD'))  { r['KZT_b_USD'] = g('KZT_USD'); }
+  if (g('KZT_EUR'))  { r['KZT_b_EUR'] = g('KZT_EUR'); }
+  if (g('KZT_THB'))  { r['KZT_b_THB_b'] = g('KZT_THB'); }
+  // THB
+  if (g('THB_RUB'))  { r['THB_b_RUB_b'] = g('THB_RUB'); }
+  if (g('THB_VND'))  { r['THB_b_VND'] = g('THB_VND'); r['THB_b_VND_b'] = g('THB_VND'); }
+  if (g('THB_USDT')) { r['THB_b_USDT'] = g('THB_USDT'); }
+  if (g('THB_USD'))  { r['THB_b_USD'] = g('THB_USD'); }
+  if (g('THB_EUR'))  { r['THB_b_EUR'] = g('THB_EUR'); }
+  if (g('THB_KZT'))  { r['THB_b_KZT_b'] = g('THB_KZT'); }
+  // RUB → KZT/THB (обратные)
+  if (g('KZT_RUB') && g('KZT_RUB') > 0) r['RUB_b_KZT_b'] = 1/g('KZT_RUB');
+  if (g('THB_RUB') && g('THB_RUB') > 0) r['RUB_b_THB_b'] = 1/g('THB_RUB');
+  return r;
+}
+
+// ─── RATES DATABASE (резервные значения если таблица недоступна) ───
+const RATES_FALLBACK = {
+  "RUB_b_VND":    315,    "RUB_b_VND_b": 315,
+  "RUB_b_USDT":   87.5,
+  "RUB_b_USD":    87.5,
+  "RUB_b_EUR":    100,
+  "RUB_b_KZT_b":  5.91,
+  "RUB_b_THB_b":  0.392,
+  "USDT_VND":     25500,  "USDT_VND_b":  25500,
+  "USDT_RUB_b":   80,
+  "USDT_USD":     0.98,
+  "USDT_EUR":     0.82,
+  "USDT_KZT_b":   498.9,
+  "USDT_THB_b":   33.09,
+  "USD_VND":      25500,  "USD_VND_b":   25500,
+  "USD_RUB_b":    80,
+  "USD_USDT":     0.98,
+  "USD_EUR":      0.82,
+  "USD_KZT_b":    498.9,
+  "USD_THB_b":    33.09,
+  "EUR_VND":      27400,  "EUR_VND_b":   27400,
+  "EUR_RUB_b":    86.4,
+  "EUR_USDT":     1.08,
+  "EUR_USD":      1.08,
+  "EUR_KZT_b":    538.8,
+  "EUR_THB_b":    35.73,
+  "KZT_b_VND":    48.57,  "KZT_b_VND_b": 48.57,
+  "KZT_b_RUB_b":  0.1515,
+  "KZT_b_USDT":   0.001838,
+  "KZT_b_USD":    0.001838,
+  "KZT_b_EUR":    0.001507,
+  "KZT_b_THB_b":  0.06302,
+  "THB_b_VND":    700,    "THB_b_VND_b": 700,
+  "THB_b_RUB_b":  2.19,
+  "THB_b_USDT":   0.0274,
+  "THB_b_USD":    0.0274,
+  "THB_b_EUR":    0.0225,
+  "THB_b_KZT_b":  13.66,
+  "VND_b_VND":    0.98,
+  "VND_b_RUB_b":  0.003028,
+  "VND_b_USDT":   0.00003709,
+  "VND_b_USD":    0.00003703,
+  "VND_b_EUR":    0.00003037,
+  "VND_b_KZT_b":  0.01888,
+  "VND_b_THB_b":  0.001252,
+  "VND_VND_b":    0.98,
+  "VND_RUB_b":    0.003028,
+  "VND_USDT":     0.00003709,
+  "VND_USD":      0.00003703,
+  "VND_EUR":      0.00003037,
+  "VND_KZT_b":    0.01888,
+  "VND_THB_b":    0.001252,
+};
+
+// Активная таблица курсов (заполняется при загрузке из Google Sheets)
+let RATES = { ...RATES_FALLBACK };
+let ratesLoadedAt = null; // время загрузки курсов
+
+// Rate to RUB (for equivalence calculation)
+const TO_RUB = {
+  "RUB_b":1, "USDT":87.5, "USD":87.5, "EUR":100,
+  "KZT_b":0.1515, "THB_b":2.19, "VND_b":0.003028, "VND":0.003028,
+  "OTHER_b":null, "OTHER_c":null
+};
+
+function getRate(from, to) {
+  const key = `${from}_${to}`;
+  if (RATES[key]) return RATES[key];
+  const rev = RATES[`${to}_${from}`];
+  if (rev) return 1 / rev;
+  return null;
+}
+
+function getRubEquiv(amount, currency) {
+  const r = TO_RUB[currency];
+  if (!r) return null;
+  return amount * r;
+}
+
+function applyRateLogic(baseRate, rubEquiv, toCurrency) {
+  if (!rubEquiv || rubEquiv <= 0) return { rate: baseRate, commission: 0, note: '', msg: '' };
+  let rate = baseRate, commission = 0, note = '', msg = '';
+  if (rubEquiv < 15000) {
+    commission = 250;
+    msg = 'При обмене такой суммы курс менее выгодный. При увеличении суммы от 15.000 ₽ условия будут лучше.';
+  } else if (rubEquiv < 20000) {
+    commission = 180;
+    msg = 'Курс на эту сумму чуть ниже основного. При обмене от 20.000 ₽ курс будет значительно выгоднее.';
+  } else if (rubEquiv < 100000) {
+    msg = 'Готовы сделать обмен в ближайшее время.';
+    note = '✅';
+  } else if (rubEquiv < 300000) {
+    rate = baseRate * 1.007;
+    msg = 'Для вашей суммы действует повышенный курс: обмен будет выгоднее, чем при стандартных условиях.';
+    note = '↑ +0.7%';
+  } else if (rubEquiv < 800000) {
+    rate = baseRate * 1.0065;
+    msg = 'Для вашей суммы действует повышенный курс: обмен будет выгоднее, чем при стандартных условиях.';
+    note = '↑ +0.65%';
+  } else if (rubEquiv < 1200000) {
+    rate = baseRate * 1.0165;
+    msg = 'Для вашей суммы действует повышенный курс: обмен будет выгоднее, чем при стандартных условиях.';
+    note = '↑ +1.65%';
+  } else {
+    rate = baseRate * 1.0165;
+    msg = 'Отличная сумма. Вам будет предложен индивидуальный курс.';
+    note = '⭐ Индивидуальный';
+  }
+  return { rate, commission, note, msg };
+}
+
+function roundAmount(amount, currency) {
+  if (!amount) return 0;
+  if (currency === 'RUB_b') return Math.round(amount / 50) * 50;
+  if (currency === 'USDT') return Math.round(amount * 10) / 10;
+  if (currency === 'VND_b' || currency === 'VND') return Math.round(amount / 1000) * 1000;
+  if (currency === 'KZT_b') return Math.round(amount / 100) * 100;
+  if (currency === 'USD' || currency === 'EUR') return Math.round(amount);
+  return Math.round(amount * 100) / 100;
+}
+
+function formatNum(n) {
+  if (!n && n !== 0) return '';
+  const parts = String(Math.abs(n)).split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return (n < 0 ? '-' : '') + parts.join(',');
+}
+
+// ─── CURRENCY LABELS ─────────────────────────────────────────
+const LABELS = {
+  "RUB_b":"🇷🇺 RUB (безнал)", "USDT":"💵 USDT", "VND_b":"🇻🇳 VND (безнал)",
+  "KZT_b":"🇰🇿 KZT (безнал)", "THB_b":"🇹🇭 THB (безнал)", "OTHER_b":"🌐 Другая (безнал)",
+  "USD":"🇺🇸 USD", "VND":"🇻🇳 VND", "EUR":"🇪🇺 EUR", "OTHER_c":"💱 Другая (наличные)"
+};
+const IS_CASH = v => ['USD','VND','EUR','OTHER_c'].includes(v);
+const IS_ONLINE_B = v => ['RUB_b','USDT','KZT_b','THB_b','VND_b'].includes(v);
+
+// ─── METHOD SETS ─────────────────────────────────────────────
+// Online pairs (only online method)
+const ONLINE_PAIRS = new Set([
+  "RUB_b_VND_b","RUB_b_USDT","RUB_b_KZT_b","RUB_b_THB_b",
+  "USDT_VND_b","USDT_RUB_b","USDT_KZT_b","USDT_THB_b",
+  "KZT_b_VND_b","KZT_b_RUB_b","KZT_b_USDT","KZT_b_THB_b",
+  "THB_b_VND_b","THB_b_RUB_b","THB_b_USDT","THB_b_KZT_b",
+  "VND_b_RUB_b","VND_b_USDT","VND_b_KZT_b","VND_b_THB_b",
+]);
+// VND_b receive - online + ATM
+const VND_B_RECV_PAIRS = new Set([
+  "RUB_b_VND_b","USDT_VND_b","KZT_b_VND_b","THB_b_VND_b"
+]);
+// ATM pairs
+const ATM_PAIRS = new Set([
+  "RUB_b_VND","RUB_b_VND_b","USDT_VND","USDT_VND_b",
+  "KZT_b_VND","KZT_b_VND_b","THB_b_VND","THB_b_VND_b","VND_b_VND"
+]);
+
+// ─── STATE ────────────────────────────────────────────────────
+let state = {
+  from: 'RUB_b', to: 'VND_b',
+  amountFrom: '', amountTo: '',
+  method: '', date: 'today', timeSlot: 0,
+  customDate: '',
+};
+
+// ─── INIT ─────────────────────────────────────────────────────
+try { window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); } catch(e){}
+
+async function initApp() {
+  const loaderText = document.getElementById('loader-text');
+  const loadingScreen = document.getElementById('loading-screen');
+
+  // Если SHEET_ID не заполнен — сразу запускаем с резервными курсами
+  if (SHEET_ID === 'ВСТАВЬТЕ_ID_ТАБЛИЦЫ_СЮДА') {
+    RATES = { ...RATES_FALLBACK };
+    loadingScreen.style.display = 'none';
+    onPairChange();
+    updateTimeSlider();
+    return;
+  }
+
+  loaderText.textContent = 'Загружаем актуальные курсы...';
+  const raw = await loadRatesFromSheets();
+
+  if (raw && Object.keys(raw).length > 0) {
+    RATES = buildRatesFromSheets(raw);
+    ratesLoadedAt = new Date();
+    loadingScreen.style.display = 'none';
+  } else {
+    // Ошибка — показываем сообщение с возможностью продолжить с резервными курсами
+    loaderText.style.display = 'none';
+    document.querySelector('.loader-spinner').style.display = 'none';
+    const errDiv = document.createElement('div');
+    errDiv.className = 'loader-error';
+    errDiv.innerHTML = `⚠️ Не удалось загрузить курсы.<br>Проверьте доступ к таблице или продолжите с последними известными курсами.`;
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'loader-retry';
+    retryBtn.textContent = '🔄 Повторить';
+    retryBtn.onclick = () => { location.reload(); };
+    const continueBtn = document.createElement('button');
+    continueBtn.className = 'loader-retry';
+    continueBtn.style.background = '#555';
+    continueBtn.style.marginLeft = '8px';
+    continueBtn.textContent = 'Продолжить с резервным курсом';
+    continueBtn.onclick = () => {
+      RATES = { ...RATES_FALLBACK };
+      loadingScreen.style.display = 'none';
+      onPairChange(); updateTimeSlider();
+    };
+    document.getElementById('loading-screen').appendChild(errDiv);
+    document.getElementById('loading-screen').appendChild(retryBtn);
+    document.getElementById('loading-screen').appendChild(continueBtn);
+    return;
+  }
+
+  onPairChange();
+  updateTimeSlider();
+}
+
+// Добавляем время загрузки курсов в rate-note
+const _origOnAmountChange = onAmountChange;
+
+initApp();
+
+// ─── PAIR CHANGE ─────────────────────────────────────────────
+function onPairChange() {
+  state.from = document.getElementById('sel-from').value;
+  state.to = document.getElementById('sel-to').value;
+  // Extra fields
+  const extraFrom = state.from === 'OTHER_b' || state.from === 'OTHER_c';
+  const extraTo   = state.to   === 'OTHER_b' || state.to   === 'OTHER_c';
+  document.getElementById('extra-from').classList.toggle('hidden', !extraFrom);
+  document.getElementById('extra-to').classList.toggle('hidden', !extraTo);
+  document.getElementById('extra-from-bank-wrap').classList.toggle('hidden', state.from !== 'OTHER_b');
+  document.getElementById('extra-to-bank-wrap').classList.toggle('hidden', state.to !== 'OTHER_b');
+  onAmountChange('from');
+  updateMethods();
+  updateRequisites();
+  checkSubmitReady();
+}
+
+// ─── AMOUNT CHANGE ────────────────────────────────────────────
+function onAmountChange(source) {
+  const from = state.from, to = state.to;
+  const isOther = from.startsWith('OTHER') || to.startsWith('OTHER');
+  if (isOther) {
+    document.getElementById('rate-card').classList.add('hidden');
+    document.getElementById('comments-wrap').innerHTML = '<div class="comment-box comment-warn mt6">📞 Курс обмена — уточнение у оператора</div>';
+    return;
+  }
+  const baseRate = getRate(from, to);
+  if (!baseRate) {
+    document.getElementById('rate-card').classList.add('hidden');
+    document.getElementById('comments-wrap').innerHTML = '<div class="comment-box comment-warn mt6">❌ Данная пара не поддерживается</div>';
+    return;
+  }
+  let amountFrom = parseFloat(document.getElementById('input-from').value) || 0;
+  let amountTo = parseFloat(document.getElementById('input-to').value) || 0;
+  const rubEquiv = getRubEquiv(source === 'from' ? amountFrom : (amountTo / baseRate), from);
+  const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to);
+  // Commission in target currency
+  const commInTo = commission > 0 ? (commission / (RATES['RUB_b_'+to] || (1/RATES[to+'_RUB_b']) || 0)) : 0;
+  if (source === 'from' && amountFrom > 0) {
+    let result = amountFrom * rate;
+    if (commission > 0 && commInTo > 0) result -= commInTo;
+    result = roundAmount(result, to);
+    document.getElementById('input-to').value = result > 0 ? result : '';
+    state.amountFrom = amountFrom; state.amountTo = result;
+  } else if (source === 'to' && amountTo > 0) {
+    let needed = amountTo / rate;
+    if (commission > 0 && commInTo > 0) needed = (amountTo + commInTo) / rate;
+    needed = roundAmount(needed, from);
+    document.getElementById('input-from').value = needed > 0 ? needed : '';
+    state.amountFrom = needed; state.amountTo = amountTo;
+  }
+  // Rate display
+  const rc = document.getElementById('rate-card');
+  rc.classList.remove('hidden');
+  document.getElementById('rate-text').textContent = `Курс на момент заявки: 1 ${from.replace('_b','').replace('_c','')} = ${formatNum(rate)} ${to.replace('_b','').replace('_c','')}${note ? ' · '+note : ''}`;
+  let rn = '';
+  if (commission > 0) rn = `Комиссия: ${commission} ₽`;
+  if (rubEquiv >= 1200000) rn = 'Сумма приблизительная. Вам будет предложен индивидуальный курс';
+  if (ratesLoadedAt) {
+    const t = ratesLoadedAt.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+    rn = (rn ? rn + ' · ' : '') + `Курс актуален на ${t}`;
+  }
+  document.getElementById('rate-note').textContent = rn;
+  // Comments
+  const comments = [];
+  if (msg) {
+    const cls = rubEquiv >= 100000 ? 'comment-success' : rubEquiv >= 20000 ? 'comment-success' : 'comment-warn';
+    comments.push(`<div class="comment-box ${cls} mt6">${msg}</div>`);
+  }
+  // Currency-specific
+  if (from === 'USD') comments.push('<div class="comment-box comment-info mt6">💵 Курс действует на купюры номиналом 100$ нового образца в отличном состоянии без дефектов и надписей.</div>');
+  if (from === 'EUR') comments.push('<div class="comment-box comment-info mt6">💶 Курс действует на купюры номиналом 100€ и 200€ нового образца в отличном состоянии без дефектов и надписей.</div>');
+  if (from === 'USDT' || to === 'USDT') comments.push('<div class="comment-box comment-warn mt6">⚠️ Принимаем только «белые» USDT. Не используйте Garantex, Bitpapa, WEX и др. Возможна AML-проверка кошелька.</div>');
+  document.getElementById('comments-wrap').innerHTML = comments.join('');
+  checkSubmitReady();
+}
+
+// ─── SWAP ─────────────────────────────────────────────────────
+function swapCurrencies() {
+  const sf = document.getElementById('sel-from');
+  const st = document.getElementById('sel-to');
+  const tmp = sf.value;
+  sf.value = st.value; st.value = tmp;
+  onPairChange();
+}
+
+// ─── METHODS ─────────────────────────────────────────────────
+function updateMethods() {
+  const from = state.from, to = state.to;
+  const pairKey = `${from}_${to}`;
+  let methods = [];
+  if (ONLINE_PAIRS.has(pairKey)) {
+    methods = ['online'];
+  } else if (VND_B_RECV_PAIRS.has(pairKey)) {
+    methods = ['online','atm'];
+  } else if (IS_CASH(from) || IS_CASH(to)) {
+    if (ATM_PAIRS.has(pairKey)) methods.push('atm');
+    methods.push('delivery');
+  } else {
+    methods = ['online'];
+  }
+  const labels = { online:'🌐\nОнлайн', atm:'🏧\nБанкомат', delivery:'🛵\nДоставка' };
+  const icons = { online:'🌐', atm:'🏧', delivery:'🛵' };
+  const names = { online:'Онлайн', atm:'Банкомат', delivery:'Доставка' };
+  const tabsEl = document.getElementById('method-tabs');
+  tabsEl.innerHTML = methods.map(m =>
+    `<div class="method-tab ${state.method===m?'active':''}" onclick="selectMethod('${m}')"><span class="method-icon">${icons[m]}</span>${names[m]}</div>`
+  ).join('');
+  if (!methods.includes(state.method)) { state.method = methods[0] || ''; }
+  selectMethod(state.method, true);
+}
+
+function selectMethod(m, silent) {
+  state.method = m;
+  document.querySelectorAll('.method-tab').forEach(el => el.classList.toggle('active', el.textContent.includes(m==='online'?'Онлайн':m==='atm'?'Банкомат':'Доставка')));
+  // Sections
+  document.getElementById('rep-section').classList.toggle('hidden', m !== 'online');
+  document.getElementById('atm-section').classList.toggle('hidden', m !== 'atm');
+  document.getElementById('delivery-section').classList.toggle('hidden', m !== 'delivery');
+  if (m === 'atm') showBankInstruction();
+  // ATM comment
+  const comments = document.getElementById('comments-wrap');
+  const atmNote = document.querySelector('.atm-note');
+  if (atmNote) atmNote.remove();
+  if (m === 'atm') {
+    document.getElementById('comments-wrap').insertAdjacentHTML('beforeend',
+      '<div class="comment-box comment-info mt6 atm-note">🏧 Банкомат выдаёт только суммы, кратные 100.000 VND. Итоговая сумма будет скорректирована.</div>');
+  }
+  if (!silent) checkSubmitReady();
+}
+
+function onRepCheck() {
+  const checked = document.getElementById('rep-check').checked;
+  document.getElementById('rep-address').classList.toggle('hidden', !checked);
+}
+
+function showBankInstruction() {
+  const bank = document.getElementById('atm-bank').value;
+  const el = document.getElementById('bank-instruction');
+  el.classList.remove('hidden');
+  if (bank === 'Vietcombank') {
+    el.innerHTML = '<strong>📋 Инструкция Vietcombank</strong>1. Подойдите к банкомату Vietcombank.<br>2. Нажмите кнопку вызова QRкода.<br>3. Выбрать нужный язык.<br>4. Появившийся QR отправьте в чат.<br>5. Введите отправленный нами пин код.<br>6. Делее на все нажимайте "Ok" / "Confirm".<br>7. Заберите наличные 💴.';
+  } else {
+    el.innerHTML = '<strong>📋 Инструкция BIDV</strong>1. Подойдите к банкомату BIDV.<br>2. Нажмите кнопку вызова QRкода.<br>3. Выбрать нужный язык.<br>4. Появившийся QR отправьте в чат.<br>5. Введите отправленный нами пин код.<br>6. Делее на все нажимайте "Ok" / "Confirm".<br>7. Заберите наличные 💴.';
+  }
+}
+
+// ─── DATE & TIME ─────────────────────────────────────────────
+function selectDate(el, val) {
+  document.querySelectorAll('.date-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  state.date = val;
+  document.getElementById('custom-date-wrap').classList.toggle('hidden', val !== 'custom');
+}
+
+function getVNTime() {
+  const now = new Date();
+  const vn = new Date(now.getTime() + (7 * 3600000) - (now.getTimezoneOffset() * 60000));
+  return vn;
+}
+
+var TIME_SLOTS = Array.from({length:28}, (_,i) => {
+  const h = 8 + Math.floor(i/2), m = (i%2)*30;
+  const h2 = 8 + Math.floor((i+1)/2), m2 = ((i+1)%2)*30;
+  const fmt = (h,m) => `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+  return `${fmt(h,m)}–${fmt(h2===24?h2-1:h2, h2===24?0:m2)}`;
+}).filter((_,i) => i < 28);
+
+// Fix: last slot should be 21:30-22:00
+TIME_SLOTS[27] = '21:30–22:00';
+
+function updateTimeSlider() {
+  const idx = parseInt(document.getElementById('time-slider').value);
+  state.timeSlot = idx;
+  document.getElementById('time-display').textContent = TIME_SLOTS[idx] || '08:00–08:30';
+}
+
+function setNearestTime() {
+  const vn = getVNTime();
+  const totalMin = vn.getHours() * 60 + vn.getMinutes() + 30;
+  const rounded = Math.ceil(totalMin / 30) * 30;
+  const slot = Math.max(0, Math.min(27, Math.round((rounded - 8*60) / 30)));
+  document.getElementById('time-slider').value = slot;
+  updateTimeSlider();
+  // Set today
+  document.querySelectorAll('.date-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  state.date = 'today';
+  document.getElementById('custom-date-wrap').classList.add('hidden');
+}
+
+// ─── REQUISITES ───────────────────────────────────────────────
+function updateRequisites() {
+  const from = state.from, to = state.to;
+  const card = document.getElementById('requisites-card');
+  let html = '';
+  // Sending bank fields
+  if (['RUB_b','KZT_b','THB_b','VND_b'].includes(from)) {
+    html += `<div class="form-row"><div class="form-label">С какого банка отправляете?</div><input type="text" class="form-input" id="req-from-bank" placeholder="Например: Сбербанк, Тинькофф, Kaspi..."></div>`;
+  }
+  if (from === 'USDT') {
+    html += `<div class="form-row"><div class="form-label">Сеть отправки USDT</div><select class="form-select" id="req-usdt-from-net"><option>Tron (TRC20)</option><option>Ethereum (ERC20)</option><option>BSC (BEP20)</option><option>TON</option><option>Solana (SOL)</option></select></div>`;
+  }
+  // Receiving fields
+  if (['RUB_b','KZT_b','THB_b','VND_b'].includes(to)) {
+    html += `<div class="form-row"><div class="form-label">ФИО получателя</div><input type="text" class="form-input" id="req-to-name" placeholder="Иванов Иван Иванович"></div>`;
+    const ph = to === 'RUB_b' ? 'Номер телефона или карты' : 'Номер телефона или счёта';
+    html += `<div class="form-row"><div class="form-label">${ph}</div><input type="text" class="form-input" id="req-to-phone" placeholder="+7 900..."></div>`;
+    html += `<div class="form-row" style="border-bottom:none"><div class="form-label">Банк получателя</div><input type="text" class="form-input" id="req-to-bank" placeholder="Банк"></div>`;
+  }
+  if (to === 'USDT') {
+    html += `<div class="form-row"><div class="form-label">Сеть получения</div><select class="form-select" id="req-usdt-net"><option>Bybit UID</option><option>Binance Pay ID</option><option>Tron (TRC20)</option><option>BSC (BEP20)</option><option>Ethereum (ERC20)</option><option>TON</option><option>Solana (SOL)</option><option>APTOS</option></select></div>`;
+    html += `<div class="form-row" style="border-bottom:none"><div class="form-label">Адрес кошелька / UID</div><input type="text" class="form-input" id="req-usdt-addr" placeholder="Введите адрес или UID"></div>`;
+  }
+  if (!html) html = '<div class="form-row" style="border-bottom:none;color:var(--muted);font-size:13px;">Для данной пары дополнительные реквизиты не требуются</div>';
+  card.innerHTML = html;
+}
+
+// ─── COMMENT COUNTER ─────────────────────────────────────────
+function updateCharCount() {
+  const len = document.getElementById('order-comment').value.length;
+  document.getElementById('char-count').textContent = `${len}/500`;
+}
+
+// ─── SUBMIT READY CHECK ───────────────────────────────────────
+function checkSubmitReady() {
+  const agree = document.getElementById('agree-check').checked;
+  const hasAmount = parseFloat(document.getElementById('input-from').value) > 0;
+  document.getElementById('submit-btn').disabled = !(agree && hasAmount);
+}
+
+// ─── BUILD CONFIRM DATA ───────────────────────────────────────
+function buildConfirmData() {
+  const from = state.from, to = state.to;
+  const amtFrom = parseFloat(document.getElementById('input-from').value) || 0;
+  const amtTo = parseFloat(document.getElementById('input-to').value) || 0;
+  const method = state.method;
+  let methodLabel = method==='online'?'Онлайн':method==='atm'?'Банкомат':'Доставка';
+  let timeStr = TIME_SLOTS[state.timeSlot];
+  let dateStr = state.date==='today'?'Сегодня':state.date==='tomorrow'?'Завтра':(document.getElementById('custom-date').value || 'Не указана');
+  let location = '';
+  if (method === 'delivery') {
+    const city = document.getElementById('del-city')?.value || '';
+    const addr = document.getElementById('del-address')?.value || '';
+    const hint = document.getElementById('del-hint')?.value || '';
+    location = [city, addr, hint].filter(Boolean).join(', ');
+  }
+  if (method === 'online' && document.getElementById('rep-check')?.checked) {
+    const city = document.getElementById('rep-city')?.value || '';
+    const street = document.getElementById('rep-street')?.value || '';
+    location = [city, street].filter(Boolean).join(', ');
+    methodLabel = 'Онлайн (с представителем)';
+  }
+  if (method === 'atm') {
+    location = document.getElementById('atm-bank')?.value || '';
+  }
+  const comment = document.getElementById('order-comment').value;
+  // Requisites
+  const reqs = {};
+  const rf = document.getElementById('req-from-bank'); if(rf) reqs.fromBank = rf.value;
+  const rt = document.getElementById('req-to-name'); if(rt) reqs.toName = rt.value;
+  const rp = document.getElementById('req-to-phone'); if(rp) reqs.toPhone = rp.value;
+  const rb = document.getElementById('req-to-bank'); if(rb) reqs.toBank = rb.value;
+  const rn = document.getElementById('req-usdt-net'); if(rn) reqs.usdtNet = rn.value;
+  const ra = document.getElementById('req-usdt-addr'); if(ra) reqs.usdtAddr = ra.value;
+  return { from, to, amtFrom, amtTo, method, methodLabel, timeStr, dateStr, location, comment, reqs };
+}
+
+// ─── GO TO CONFIRM ────────────────────────────────────────────
+function goToConfirm() {
+  const d = buildConfirmData();
+  const fromLabel = LABELS[d.from] || d.from;
+  const toLabel = LABELS[d.to] || d.to;
+  let rows = [
+    ['Обмен', `${fromLabel} → ${toLabel}`],
+    ['Сумма продажи', `${formatNum(d.amtFrom)} ${d.from.replace('_b','').replace('_c','')}`],
+    ['Сумма покупки', `${formatNum(d.amtTo)} ${d.to.replace('_b','').replace('_c','')}`],
+    ['Способ', d.methodLabel],
+    ['Дата', d.dateStr],
+    ['Время', d.timeStr + ' (GMT+7)'],
+  ];
+  if (d.location) rows.push(['Место', d.location]);
+  if (d.reqs.fromBank) rows.push(['Банк отправки', d.reqs.fromBank]);
+  if (d.reqs.toName) rows.push(['ФИО получателя', d.reqs.toName]);
+  if (d.reqs.toPhone) rows.push(['Телефон/карта', d.reqs.toPhone]);
+  if (d.reqs.toBank) rows.push(['Банк получателя', d.reqs.toBank]);
+  if (d.reqs.usdtNet) rows.push(['Сеть USDT', d.reqs.usdtNet]);
+  if (d.reqs.usdtAddr) rows.push(['Адрес кошелька', d.reqs.usdtAddr]);
+  if (d.comment) rows.push(['Комментарий', d.comment]);
+  let html = rows.map(([k,v],i) =>
+    `<div class="confirm-row${i===0?' style="border-top:none"':''}"><div class="confirm-key">${k}</div><div class="confirm-val">${v}</div></div>`
+  ).join('');
+  document.getElementById('confirm-details').innerHTML = html;
+  showPage('page-confirm');
+}
+
+// ─── SUBMIT ───────────────────────────────────────────────────
+async function submitOrder() {
+  const d = buildConfirmData();
+  const fromLabel = LABELS[d.from] || d.from;
+  const toLabel = LABELS[d.to] || d.to;
+  const fromCode = d.from.replace('_b','').replace('_c','');
+  const toCode   = d.to.replace('_b','').replace('_c','');
+  const tgUser = (() => { try { return window.Telegram.WebApp.initDataUnsafe?.user; } catch(e) { return null; } })();
+  const username  = tgUser?.username ? `@${tgUser.username}` : (tgUser?.first_name || 'Клиент');
+  const firstName = tgUser?.first_name || username;
+  const userId    = tgUser?.id || null;
+
+  // Текущий курс для заявки
+  const baseRate = getRate(d.from, d.to);
+  const rateStr  = baseRate ? `1 ${fromCode} = ${formatNum(baseRate)} ${toCode}` : 'уточнение у оператора';
+
+  // Показываем экран загрузки
+  document.getElementById('submit-btn') && (document.getElementById('submit-btn').disabled = true);
+  showPage('page-success');
+  document.getElementById('success-msg').textContent = '⏳ Отправляем заявку...';
+
+  // Payload для Vercel
+  const payload = {
+    initData: window.Telegram?.WebApp?.initData || '',
+    userId, username, firstName,
+    fromLabel, toLabel, fromCode, toCode,
+    amtFrom: formatNum(d.amtFrom),
+    amtTo:   formatNum(d.amtTo),
+    rate: rateStr,
+    method: d.methodLabel,
+    date: d.dateStr,
+    time: d.timeStr,
+    location: d.location || '',
+    comment: d.comment || '',
+    reqs: d.reqs || {},
+  };
+
+  let orderNum = '';
+
+  // Отправка на Vercel
+  if (VERCEL_API_URL && !VERCEL_API_URL.startsWith('ВСТАВЬТЕ')) {
+    try {
+      const res = await fetch(VERCEL_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      orderNum = json.orderNum || '';
+    } catch(e) {
+      console.error('Vercel send error:', e);
+    }
+  }
+
+  // Текст для экрана успеха
+  const msg = [
+    `${firstName}, ваша заявка принята! 🎉`,
+    ``,
+    `Обмен: ${fromLabel} → ${toLabel}`,
+    `Продажа: ${formatNum(d.amtFrom)} ${fromCode}`,
+    `Покупка: ${formatNum(d.amtTo)} ${toCode}`,
+    `Способ: ${d.methodLabel}`,
+    `Дата: ${d.dateStr}, ${d.timeStr}`,
+    d.location ? `Место: ${d.location}` : null,
+    d.comment ? `Комментарий: ${d.comment}` : null,
+    ``,
+    `Ваша заявка уже в обработке. Ожидайте уведомление 🔔`,
+    orderNum ? `\n№ заявки: ${orderNum}` : null,
+  ].filter(Boolean).join('\n');
+
+  document.getElementById('success-msg').textContent = msg;
+}
+
+function goBack() { showPage('page-form'); }
+
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+}
+</script>
+</body>
+</html>
