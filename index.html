@@ -608,10 +608,19 @@ function getRubEquiv(amount, currency) {
   return amount * r;
 }
 
-function applyRateLogic(baseRate, rubEquiv, toCurrency) {
+function applyRateLogic(baseRate, rubEquiv, toCurrency, fromCurrency) {
   if (!rubEquiv || rubEquiv <= 0) return { rate: baseRate, commission: 0, note: '', msg: '' };
   let rate = baseRate, commission = 0, note = '', msg = '';
-  // Комиссия зашита в курс (коэффициент), отдельно не показывается
+
+  // Определяем группу для повышения курса
+  // Группа 1: RUB → VND / USD / USDT
+  const isGroup1 = fromCurrency === 'RUB_b' &&
+    ['VND_b','VND','USD','USDT'].includes(toCurrency);
+  // Группа 2: USD/USDT → VND
+  const isGroup2 = ['USD','USDT'].includes(fromCurrency) &&
+    ['VND_b','VND'].includes(toCurrency);
+
+  // Малые суммы — комиссия зашита в курс (одинаково для всех пар)
   if (rubEquiv < 15000) {
     const factor = Math.max(0, 1 - 250 / rubEquiv);
     rate = baseRate * factor;
@@ -623,26 +632,40 @@ function applyRateLogic(baseRate, rubEquiv, toCurrency) {
   } else if (rubEquiv < 100000) {
     msg = 'Готовы сделать обмен в ближайшее время.';
     note = '✅';
-  } else if (rubEquiv < 300000) {
-    rate = baseRate * 1.007;
-    msg = 'Для вашей суммы действует повышенный курс: обмен будет выгоднее, чем при стандартных условиях.';
-    note = '↑ +0.7%';
-  } else if (rubEquiv < 800000) {
-    rate = baseRate * 1.0065;
-    msg = 'Для вашей суммы действует повышенный курс: обмен будет выгоднее, чем при стандартных условиях.';
-    note = '↑ +0.65%';
-  } else if (rubEquiv < 1200000) {
-    rate = baseRate * 1.0165;
-    msg = 'Для вашей суммы действует повышенный курс: обмен будет выгоднее, чем при стандартных условиях.';
-    note = '↑ +1.65%';
   } else {
-    rate = baseRate * 1.0165;
-    msg = 'Отличная сумма. Вам будет предложен индивидуальный курс.';
-    note = '⭐ Индивидуальный';
+    // Крупные суммы — повышение курса зависит от группы пар
+    let pct = 0;
+    if (isGroup1) {
+      if (rubEquiv < 300000)        pct = 0.7;
+      else if (rubEquiv < 800000)   pct = 1.3;
+      else                          pct = 1.65;  // 800k+ и 1.2M+
+    } else if (isGroup2) {
+      if (rubEquiv < 300000)        pct = 0.45;
+      else if (rubEquiv < 800000)   pct = 0.65;
+      else                          pct = 1.15;  // 800k+ и 1.2M+
+    }
+    // pct === 0 для остальных пар — курс не меняется
+
+    if (pct > 0) {
+      rate = baseRate * (1 + pct / 100);
+      note = `↑ +${pct}%`;
+    }
+
+    if (rubEquiv >= 1200000) {
+      msg = 'Отличная сумма. Вам будет предложен индивидуальный курс.';
+      note = (pct > 0 ? note + ' · ' : '') + '⭐ Индивидуальный';
+    } else if (pct > 0) {
+      msg = 'Для вашей суммы действует повышенный курс: обмен будет выгоднее, чем при стандартных условиях.';
+    } else {
+      msg = 'Готовы сделать обмен в ближайшее время.';
+      note = '✅';
+    }
   }
+
   // Округление курса по правилам
   if (toCurrency === 'VND' || toCurrency === 'VND_b') rate = Math.round(rate);
   else rate = Math.round(rate * 10) / 10;
+
   return { rate, commission: 0, note, msg };
 }
   
