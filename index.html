@@ -452,6 +452,7 @@ if (!window.Telegram?.WebApp?.initData) {
 // ─── VERCEL API CONFIG ────────────────────────────────────────
 // ⚠️ Замените на URL вашего Vercel проекта после деплоя
 const VERCEL_API_URL = 'https://viet-change-mini-app.vercel.app/api/order';
+const VERCEL_VISIT_URL = 'https://viet-change-mini-app.vercel.app/api/visit';
 // Пример: 'https://vietchange-api.vercel.app/api/order'
 
 // ─── GOOGLE SHEETS CONFIG (для курсов) ───────────────────────
@@ -729,9 +730,30 @@ let state = {
 // ─── INIT ─────────────────────────────────────────────────────
 try { window.Telegram.WebApp.ready(); window.Telegram.WebApp.expand(); } catch(e){}
 
+// ─── ЛОГИРОВАНИЕ ВИЗИТА В MINI APP ─────────────────────────
+async function logVisit() {
+  try {
+    const tg = window.Telegram?.WebApp;
+    if (!tg?.initData) return; // Только из Telegram
+    const payload = {
+      initData: tg.initData,
+      platform: tg.platform || '',
+      version:  tg.version  || '',
+    };
+    fetch(VERCEL_VISIT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(e => console.warn('Visit log failed:', e));
+  } catch(e) { console.warn('logVisit error:', e); }
+}
+  
 async function initApp() {
   const loaderText = document.getElementById('loader-text');
   const loadingScreen = document.getElementById('loading-screen');
+  
+  // Логируем визит клиента (асинхронно, не блокирует загрузку)
+  logVisit();
 
   // Если SHEET_ID не заполнен — сразу запускаем с резервными курсами
   if (SHEET_ID === 'ВСТАВЬТЕ_ID_ТАБЛИЦЫ_СЮДА') {
