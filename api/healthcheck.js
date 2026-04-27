@@ -1,19 +1,43 @@
 // api/healthcheck.js — Тихая проверка работоспособности
-// Пишет в General только если что-то сломалось
+// Алерты идут через 3 канала: Telegram (основной), PuzzleBot (резервный), email от cron-job.org
 
-const BOT_TOKEN       = process.env.BOT_TOKEN;
-const GROUP_ID        = process.env.GROUP_ID;
-const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
+const BOT_TOKEN        = process.env.BOT_TOKEN;
+const GROUP_ID         = process.env.GROUP_ID;
+const THREAD_ID        = process.env.THREAD_ID;
+const APPS_SCRIPT_URL  = process.env.APPS_SCRIPT_URL;
+const PUZZLEBOT_TOKEN  = process.env.PUZZLEBOT_TOKEN;
+const SUPPORT_USER_ID  = process.env.SUPPORT_USER_ID;
 
-async function tgSend(chatId, text) {
+async function tgSend(chatId, text, threadId) {
   try {
+    const body = { chat_id: chatId, text, parse_mode: 'HTML' };
+    if (threadId) body.message_thread_id = parseInt(threadId);
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+      body: JSON.stringify(body),
     });
     return res.json();
-  } catch(e) { console.error('tgSend error:', e); return null; }
+  } catch(e) { console.error('tgSend error:', e); return { ok: false, error: e.message }; }
+}
+
+// Резервный канал — отправка через PuzzleBot
+async function puzzleSend(userId, text) {
+  if (!PUZZLEBOT_TOKEN || !userId) return { ok: false, error: 'no token or user' };
+  try {
+    // PuzzleBot API: tg.sendMessage — обёртка над Telegram Bot API
+    const url = `https://api.puzzlebot.top/?token=${PUZZLEBOT_TOKEN}&method=tg.sendMessage`;
+    const params = new URLSearchParams({
+      chat_id: userId,
+      text: text,
+      parse_mode: 'HTML',
+    });
+    const res = await fetch(url + '&' + params.toString());
+    return res.json();
+  } catch(e) {
+    console.error('puzzleSend error:', e);
+    return { ok: false, error: e.message };
+  }
 }
 
 function nowVN() {
@@ -21,7 +45,6 @@ function nowVN() {
     .replace('T', ' ').substring(0, 16) + ' (GMT+7)';
 }
 
-// Проверка Telegram API
 async function checkTelegram() {
   try {
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getMe`);
@@ -33,7 +56,6 @@ async function checkTelegram() {
   }
 }
 
-// Проверка Apps Script
 async function checkAppsScript() {
   if (!APPS_SCRIPT_URL) return { ok: true, skipped: true };
   try {
@@ -45,7 +67,6 @@ async function checkAppsScript() {
       redirect: 'follow',
     });
     clearTimeout(timer);
-    // Apps Script для GET может вернуть что угодно, главное что доступен
     if (res.status >= 500) return { ok: false, error: `Apps Script HTTP ${res.status}` };
     return { ok: true };
   } catch(e) {
@@ -59,13 +80,28 @@ export default async function handler(req, res) {
 
   const allOk = tg.ok && sheets.ok;
 
-  // Если что-то сломалось — алерт в General
-  if (!allOk && GROUP_ID) {
+  if (!allOk) {
     const errors = [];
     if (!tg.ok) errors.push(`❌ Telegram: ${tg.error}`);
     if (!sheets.ok) errors.push(`❌ Google Sheets: ${sheets.error}`);
     const msg = `🚨 <b>СБОЙ СЕРВИСА</b>\n\n${errors.join('\n')}\n\n<b>Время:</b> ${nowVN()}\n\n⚠️ Заявки могут не обрабатываться. Проверьте сервисы.`;
-    await tgSend(GROUP_ID, msg);
+
+    // Канал 1: Telegram (основной) — может не работать если сломан токен
+    if (GROUP_ID) {
+      await tgSend(GROUP_ID, msg, THREAD_ID || null);
+    }
+
+    // Канал 2: PuzzleBot (резервный) — независимый канал
+    // Отправляем менеджеру в личку
+    if (SUPPORT_USER_ID) {
+      const r = await puzzleSend(SUPPORT_USER_ID, msg);
+      console.log('PuzzleBot alert to support:', JSON.stringify(r));
+    }
+    // Отправляем в группу через PuzzleBot тоже
+    if (GROUP_ID) {
+      const r = await puzzleSend(GROUP_ID, msg);
+      console.log('PuzzleBot alert to group:', JSON.stringify(r));
+    }
   }
 
   return res.status(allOk ? 200 : 503).json({
