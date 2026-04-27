@@ -931,8 +931,8 @@ function updateMethods() {
   } else if (VND_B_RECV_PAIRS.has(pairKey)) {
     methods = ['online','atm'];
   } else if (IS_CASH(from) || IS_CASH(to)) {
-    if (ATM_PAIRS.has(pairKey)) methods.push('atm');
     methods.push('delivery');
+    if (ATM_PAIRS.has(pairKey)) methods.push('atm');
   } else {
     methods = ['online'];
   }
