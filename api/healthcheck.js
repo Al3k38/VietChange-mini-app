@@ -22,16 +22,17 @@ async function tgSend(chatId, text, threadId) {
 }
 
 // Резервный канал — отправка через PuzzleBot
-async function puzzleSend(userId, text) {
+async function puzzleSend(userId, text, threadId) {
   if (!PUZZLEBOT_TOKEN || !userId) return { ok: false, error: 'no token or user' };
   try {
-    // PuzzleBot API: tg.sendMessage — обёртка над Telegram Bot API
     const url = `https://api.puzzlebot.top/?token=${PUZZLEBOT_TOKEN}&method=tg.sendMessage`;
-    const params = new URLSearchParams({
+    const paramsObj = {
       chat_id: userId,
       text: text,
       parse_mode: 'HTML',
-    });
+    };
+    if (threadId) paramsObj.message_thread_id = threadId;
+    const params = new URLSearchParams(paramsObj);
     const res = await fetch(url + '&' + params.toString());
     return res.json();
   } catch(e) {
