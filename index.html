@@ -658,7 +658,7 @@ function applyRateLogic(baseRate, rubEquiv, toCurrency, fromCurrency) {
 
     if (rubEquiv >= 1200000) {
       msg = 'Отличная сумма. Вам будет предложен индивидуальный курс.';
-      note = (pct > 0 ? note + ' · ' : '') + '⭐ Индивидуальный';
+      note = (pct > 0 ? note + ' · ' : '') + '⭐ Индивидуальный ⭐';
     } else if (pct > 0) {
       msg = 'Для вашей суммы действует повышенный курс: обмен будет выгоднее, чем при стандартных условиях.';
     } else {
@@ -864,7 +864,6 @@ function onAmountChange(source) {
   document.getElementById('rate-text').textContent = `Курс на момент заявки: 1 ${from.replace('_b','').replace('_c','')} = ${formatNum(rate)} ${to.replace('_b','').replace('_c','')}${note ? ' · '+note : ''}`;
   let rn = '';
   if (commission > 0) rn = `Комиссия: ${commission} ₽`;
-  if (rubEquiv >= 1200000) rn = 'Сумма приблизительная. Вам будет предложен индивидуальный курс';
   if (ratesLoadedAt) {
     const t = ratesLoadedAt.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
     rn = (rn ? rn + ' · ' : '') + `Курс актуален на ${t}`;
