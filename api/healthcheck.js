@@ -98,12 +98,11 @@ export default async function handler(req, res) {
       const r = await puzzleSend(SUPPORT_USER_ID, msg);
       console.log('PuzzleBot alert to support:', JSON.stringify(r));
     }
-    // Отправляем в группу через PuzzleBot тоже
+    // Отправляем в группу через PuzzleBot — в топик "Заявки"
     if (GROUP_ID) {
-      const r = await puzzleSend(GROUP_ID, msg);
-      console.log('PuzzleBot alert to group:', JSON.stringify(r));
+      const r = await puzzleSend(GROUP_ID, msg, THREAD_ID || null);
+      console.log('PuzzleBot alert to group/thread:', JSON.stringify(r));
     }
-  }
 
   return res.status(allOk ? 200 : 503).json({
     ok: allOk,
