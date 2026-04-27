@@ -870,12 +870,22 @@ function onAmountChange(source) {
     needed = roundAmount(needed, from);
     document.getElementById('input-from').value = needed > 0 ? needed : '';
     state.amountFrom = needed; state.amountTo = result;
-  } else if (source === 'method' && isATM && amountFrom > 0) {
-    let result = Math.round(amountFrom * rate / 100000) * 100000;
-    let newAmountFrom = roundAmount(result / rate, from);
-    document.getElementById('input-from').value = newAmountFrom;
-    document.getElementById('input-to').value = result;
-    state.amountFrom = newAmountFrom; state.amountTo = result;
+  } else if (source === 'method' && amountFrom > 0) {
+    // При смене метода — пересчитываем от текущего "Отдаёте"
+    let result = amountFrom * rate;
+    if (isATM) {
+      // Банкомат: округляем VND до кратной 100.000 и пересчитываем RUB обратно
+      result = Math.round(result / 100000) * 100000;
+      let newAmountFrom = roundAmount(result / rate, from);
+      document.getElementById('input-from').value = newAmountFrom;
+      state.amountFrom = newAmountFrom;
+    } else {
+      // Не банкомат: обычное округление
+      result = roundAmount(result, to);
+      state.amountFrom = amountFrom;
+    }
+    document.getElementById('input-to').value = result > 0 ? result : '';
+    state.amountTo = result;
   }
   // Rate display
   const rc = document.getElementById('rate-card');
