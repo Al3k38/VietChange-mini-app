@@ -845,7 +845,8 @@ function onAmountChange(source) {
   const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to, from);
   // Commission in target currency
   const commInTo = commission > 0 ? (commission / (RATES['RUB_b_'+to] || (1/RATES[to+'_RUB_b']) || 0)) : 0;
-  // ATM-режим: округление VND до кратной 100.000
+  // ATM-режим: VND кратна 100.000, RUB пересчитывается обратно
+  // Пересчёт происходит только при смене метода/пары, не во время ввода
   const isATM = state.method === 'atm' && (to === 'VND' || to === 'VND_b');
 
   if (source === 'from' && amountFrom > 0) {
@@ -869,6 +870,12 @@ function onAmountChange(source) {
     needed = roundAmount(needed, from);
     document.getElementById('input-from').value = needed > 0 ? needed : '';
     state.amountFrom = needed; state.amountTo = result;
+  } else if (source === 'method' && isATM && amountFrom > 0) {
+    let result = Math.round(amountFrom * rate / 100000) * 100000;
+    let newAmountFrom = roundAmount(result / rate, from);
+    document.getElementById('input-from').value = newAmountFrom;
+    document.getElementById('input-to').value = result;
+    state.amountFrom = newAmountFrom; state.amountTo = result;
   }
   // Rate display
   const rc = document.getElementById('rate-card');
@@ -949,7 +956,7 @@ function selectMethod(m, silent) {
  if (!silent) {
     checkSubmitReady();
     // Пересчёт суммы (важно для ATM-режима с кратностью 100.000 VND)
-    onAmountChange('from');
+    onAmountChange('method');
   }
 }
 
