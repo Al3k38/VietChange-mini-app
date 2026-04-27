@@ -845,18 +845,34 @@ function onAmountChange(source) {
   const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to, from);
   // Commission in target currency
   const commInTo = commission > 0 ? (commission / (RATES['RUB_b_'+to] || (1/RATES[to+'_RUB_b']) || 0)) : 0;
+  // ATM-режим: VND кратна 100.000, RUB пересчитывается обратно
+  const isATM = state.method === 'atm' && (to === 'VND' || to === 'VND_b');
   if (source === 'from' && amountFrom > 0) {
     let result = amountFrom * rate;
-    if (commission > 0 && commInTo > 0) result -= commInTo;
-    result = roundAmount(result, to);
+    if (isATM) {
+      // Округляем VND до кратной 100.000
+      result = Math.round(result / 100000) * 100000;
+      // Пересчитываем сумму в исходной валюте обратно
+      let newAmountFrom = result / rate;
+      newAmountFrom = roundAmount(newAmountFrom, from);
+      document.getElementById('input-from').value = newAmountFrom > 0 ? newAmountFrom : '';
+      amountFrom = newAmountFrom;
+    } else {
+      result = roundAmount(result, to);
+    }
     document.getElementById('input-to').value = result > 0 ? result : '';
     state.amountFrom = amountFrom; state.amountTo = result;
   } else if (source === 'to' && amountTo > 0) {
-    let needed = amountTo / rate;
-    if (commission > 0 && commInTo > 0) needed = (amountTo + commInTo) / rate;
+    let result = amountTo;
+    if (isATM) {
+      // Округляем VND до кратной 100.000
+      result = Math.round(result / 100000) * 100000;
+      document.getElementById('input-to').value = result;
+    }
+    let needed = result / rate;
     needed = roundAmount(needed, from);
     document.getElementById('input-from').value = needed > 0 ? needed : '';
-    state.amountFrom = needed; state.amountTo = amountTo;
+    state.amountFrom = needed; state.amountTo = result;
   }
   // Rate display
   const rc = document.getElementById('rate-card');
@@ -934,7 +950,11 @@ function selectMethod(m, silent) {
     document.getElementById('comments-wrap').insertAdjacentHTML('beforeend',
       '<div class="comment-box comment-info mt6 atm-note">🏧 Банкомат выдаёт только суммы, кратные 100.000 VND. Итоговая сумма будет скорректирована.</div>');
   }
-  if (!silent) checkSubmitReady();
+ if (!silent) {
+    checkSubmitReady();
+    // Пересчёт суммы (важно для ATM-режима с кратностью 100.000 VND)
+    onAmountChange('from');
+  }
 }
 
 function onRepCheck() {
