@@ -763,15 +763,6 @@ async function initApp() {
   // Логируем визит клиента (асинхронно, не блокирует загрузку)
   logVisit();
 
-  // Если SHEET_ID не заполнен — сразу запускаем с резервными курсами
-  if (SHEET_ID === 'ВСТАВЬТЕ_ID_ТАБЛИЦЫ_СЮДА') {
-    RATES = { ...RATES_FALLBACK };
-    loadingScreen.style.display = 'none';
-    onPairChange();
-    updateTimeSlider();
-    return;
-  }
-
   loaderText.textContent = 'Загружаем актуальные курсы...';
   const raw = await loadRatesFromSheets();
 
