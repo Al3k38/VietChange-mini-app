@@ -592,11 +592,11 @@ const TO_RUB = {
 };
 
 function getRate(from, to) {
+  // Возвращает число для умножения: amountTo = amountFrom * getRate()
   // Прямая пара
   let key = `${from}_${to}`;
   if (RATES[key]) {
     const r = RATES[key];
-    // Если это объект {rate, op} — учитываем действие
     if (typeof r === 'object') {
       return r.op === 'div' ? 1 / r.rate : r.rate;
     }
@@ -607,10 +607,39 @@ function getRate(from, to) {
   if (RATES[key]) {
     const r = RATES[key];
     if (typeof r === 'object') {
-      // Если оригинал умножение, то обратное направление = деление
       return r.op === 'div' ? r.rate : 1 / r.rate;
     }
     return 1 / r;
+  }
+  return null;
+}
+
+// Возвращает информацию для отображения курса в UI
+// {displayRate, displayFrom, displayTo} — например {316, 'RUB', 'VND'} или {84.4, 'USDT', 'RUB_b'}
+function getRateForDisplay(from, to) {
+  let key = `${from}_${to}`;
+  if (RATES[key]) {
+    const r = RATES[key];
+    if (typeof r === 'object') {
+      // Если op=div — отображаем в обратном направлении (1 to = X from)
+      if (r.op === 'div') {
+        return { rate: r.rate, displayFrom: to, displayTo: from };
+      }
+      return { rate: r.rate, displayFrom: from, displayTo: to };
+    }
+    return { rate: r, displayFrom: from, displayTo: to };
+  }
+  key = `${to}_${from}`;
+  if (RATES[key]) {
+    const r = RATES[key];
+    if (typeof r === 'object') {
+      // Зеркалим логику для обратной пары
+      if (r.op === 'div') {
+        return { rate: r.rate, displayFrom: from, displayTo: to };
+      }
+      return { rate: r.rate, displayFrom: to, displayTo: from };
+    }
+    return { rate: r, displayFrom: to, displayTo: from };
   }
   return null;
 }
@@ -889,7 +918,17 @@ function onAmountChange(source) {
   // Rate display
   const rc = document.getElementById('rate-card');
   rc.classList.remove('hidden');
-  document.getElementById('rate-text').textContent = `Курс на момент заявки: 1 ${from.replace('_b','').replace('_c','')} = ${formatNum(rate)} ${to.replace('_b','').replace('_c','')}${note ? ' · '+note : ''}`;
+  const disp = getRateForDisplay(from, to);
+  let rateText;
+  if (disp) {
+    const dispFromCode = disp.displayFrom.replace('_b','').replace('_c','');
+    const dispToCode = disp.displayTo.replace('_b','').replace('_c','');
+    rateText = `Курс на момент заявки: 1 ${dispFromCode} = ${formatNum(disp.rate)} ${dispToCode}`;
+  } else {
+    rateText = `Курс на момент заявки: 1 ${from.replace('_b','').replace('_c','')} = ${formatNum(rate)} ${to.replace('_b','').replace('_c','')}`;
+  }
+  if (note) rateText += ' · ' + note;
+  document.getElementById('rate-text').textContent = rateText;
   let rn = '';
   if (commission > 0) rn = `Комиссия: ${commission} ₽`;
   if (ratesLoadedAt) {
