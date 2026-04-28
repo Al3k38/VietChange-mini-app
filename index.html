@@ -656,7 +656,7 @@ function getRubEquiv(amount, currency) {
   return amount * r;
 }
 
-function applyRateLogic(baseRate, rubEquiv, toCurrency, fromCurrency) {
+function applyRateLogic(baseRate, rubEquiv, toCurrency, fromCurrency, isInverted) {
   if (!rubEquiv || rubEquiv <= 0) return { rate: baseRate, commission: 0, note: '', msg: '' };
   let rate = baseRate, commission = 0, note = '', msg = '';
 
@@ -671,11 +671,11 @@ function applyRateLogic(baseRate, rubEquiv, toCurrency, fromCurrency) {
   // Малые суммы — комиссия зашита в курс (одинаково для всех пар)
   if (rubEquiv < 15000) {
     const factor = Math.max(0, 1 - 250 / rubEquiv);
-    rate = baseRate * factor;
+    rate = isInverted ? baseRate / factor : baseRate * factor;
     msg = 'При обмене такой суммы курс менее выгодный. При увеличении суммы от 15.000 ₽ условия будут лучше.';
   } else if (rubEquiv < 20000) {
     const factor = Math.max(0, 1 - 180 / rubEquiv);
-    rate = baseRate * factor;
+    rate = isInverted ? baseRate / factor : baseRate * factor;
     msg = 'Курс на эту сумму чуть ниже основного. При обмене от 20.000 ₽ курс будет значительно выгоднее.';
   } else if (rubEquiv < 100000) {
     msg = 'Готовы сделать обмен в ближайшее время.';
@@ -694,8 +694,8 @@ function applyRateLogic(baseRate, rubEquiv, toCurrency, fromCurrency) {
     }
     // pct === 0 для остальных пар — курс не меняется
 
-    if (pct > 0) {
-      rate = baseRate * (1 + pct / 100);
+   if (pct > 0) {
+      rate = isInverted ? baseRate / (1 + pct / 100) : baseRate * (1 + pct / 100);
       note = `↑ +${pct}%`;
     }
 
