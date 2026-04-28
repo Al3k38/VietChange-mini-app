@@ -452,6 +452,7 @@ if (!window.Telegram?.WebApp?.initData) {
 // ─── VERCEL API CONFIG ────────────────────────────────────────
 // ⚠️ Замените на URL вашего Vercel проекта после деплоя
 const VERCEL_API_URL = 'https://viet-change-mini-app.vercel.app/api/order';
+const RATES_API_URL = 'https://viet-change-mini-app.vercel.app/api/rates';
 const VERCEL_VISIT_URL = 'https://viet-change-mini-app.vercel.app/api/visit';
 // Пример: 'https://vietchange-api.vercel.app/api/order'
 
@@ -600,10 +601,26 @@ const TO_RUB = {
 };
 
 function getRate(from, to) {
-  const key = `${from}_${to}`;
-  if (RATES[key]) return RATES[key];
-  const rev = RATES[`${to}_${from}`];
-  if (rev) return 1 / rev;
+  // Прямая пара
+  let key = `${from}_${to}`;
+  if (RATES[key]) {
+    const r = RATES[key];
+    // Если это объект {rate, op} — учитываем действие
+    if (typeof r === 'object') {
+      return r.op === 'div' ? 1 / r.rate : r.rate;
+    }
+    return r;
+  }
+  // Обратная пара
+  key = `${to}_${from}`;
+  if (RATES[key]) {
+    const r = RATES[key];
+    if (typeof r === 'object') {
+      // Если оригинал умножение, то обратное направление = деление
+      return r.op === 'div' ? r.rate : 1 / r.rate;
+    }
+    return 1 / r;
+  }
   return null;
 }
 
