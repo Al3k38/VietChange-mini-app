@@ -884,7 +884,17 @@ function onAmountChange(source) {
   let amountFrom = parseFloat(document.getElementById('input-from').value) || 0;
   let amountTo = parseFloat(document.getElementById('input-to').value) || 0;
   const rubEquiv = getRubEquiv(source === 'from' ? amountFrom : (amountTo / baseRate), from);
-  const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to, from);
+  // Определяем — это инвертированная пара (op:'div')?
+const directKey = `${from}_${to}`;
+const reverseKey = `${to}_${from}`;
+let isInverted = false;
+if (RATES[directKey] && typeof RATES[directKey] === 'object' && RATES[directKey].op === 'div') {
+  isInverted = true;
+}
+if (!RATES[directKey] && RATES[reverseKey] && typeof RATES[reverseKey] === 'object' && RATES[reverseKey].op === 'mul') {
+  isInverted = true;
+}
+const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to, from, isInverted);
   // Commission in target currency
   const commInTo = commission > 0 ? (commission / (RATES['RUB_b_'+to] || (1/RATES[to+'_RUB_b']) || 0)) : 0;
   // ATM-режим: VND кратна 100.000, RUB пересчитывается обратно
