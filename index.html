@@ -465,22 +465,13 @@ const SHEETS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?t
 
 async function loadRatesFromSheets() {
   try {
-    const res = await fetch(SHEETS_URL);
+    const res = await fetch(RATES_API_URL);
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    const csv = await res.text();
-    const lines = csv.trim().split('\n').slice(1); // skip header
-    const loaded = {};
-    for (const line of lines) {
-      const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
-      const key = cols[0]; // column A: variable name
-      const val = parseFloat(cols[2]); // column C: rate value
-      if (key && !key.startsWith('__') && !isNaN(val)) {
-        loaded[key] = val;
-      }
-    }
-    return loaded;
+    const data = await res.json();
+    if (!data.ok || !data.rates) return null;
+    return data.rates;
   } catch(e) {
-    console.error('Sheets load error:', e);
+    console.error('Rates load error:', e);
     return null;
   }
 }
@@ -785,7 +776,7 @@ async function initApp() {
   const raw = await loadRatesFromSheets();
 
   if (raw && Object.keys(raw).length > 0) {
-    RATES = buildRatesFromSheets(raw);
+    RATES = raw;
     ratesLoadedAt = new Date();
     loadingScreen.style.display = 'none';
   } else {
