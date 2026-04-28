@@ -585,11 +585,14 @@ let RATES = { ...RATES_FALLBACK };
 let ratesLoadedAt = null; // время загрузки курсов
 
 // Rate to RUB (for equivalence calculation)
-const TO_RUB = {
-  "RUB_b":1, "USDT":87.5, "USD":87.5, "EUR":100,
-  "KZT_b":0.1515, "THB_b":2.19, "VND_b":0.003028, "VND":0.003028,
-  "OTHER_b":null, "OTHER_c":null
-};
+function getToRub(currency) {
+  if (currency === 'RUB' || currency === 'RUB_b') return 1;
+  // Пытаемся найти прямой курс currency → RUB_b в RATES
+  // Используем уже работающий getRate
+  const r = getRate(currency, 'RUB_b');
+  if (r) return r;
+  return null;
+}
 
 function getRate(from, to) {
   // Возвращает число для умножения: amountTo = amountFrom * getRate()
@@ -645,7 +648,7 @@ function getRateForDisplay(from, to) {
 }
 
 function getRubEquiv(amount, currency) {
-  const r = TO_RUB[currency];
+  const r = getToRub(currency);
   if (!r) return null;
   return amount * r;
 }
