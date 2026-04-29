@@ -83,7 +83,7 @@ function buildGroupMessage(d, orderNum) {
     ``,
     `<b>Встреча №</b>`,
     ``,
-    `👤 Клиент: ${d.username || 'неизвестен'} (ID: <code>${d.userId || '—'}</code>)`,
+    `<b>👤 Клиент:</b> ${d.username || 'неизвестен'} (ID: <code>${d.userId || '—'}</code>)`,
     ``,
     `🔄 <b>Обмен: ${d.fromLabel} → ${d.toLabel}</b>`,
     `💵 <b>Продажа:</b> ${d.amtFrom} ${d.fromCode}`,
