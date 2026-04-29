@@ -671,11 +671,11 @@ function applyRateLogic(baseRate, rubEquiv, toCurrency, fromCurrency, isInverted
   // Малые суммы — комиссия зашита в курс (одинаково для всех пар)
   if (rubEquiv < 15000) {
     const factor = Math.max(0, 1 - 250 / rubEquiv);
-    rate = isInverted ? baseRate / factor : baseRate * factor;
+    rate = baseRate * factor;
     msg = 'При обмене такой суммы курс менее выгодный. При увеличении суммы от 15.000 ₽ условия будут лучше.';
   } else if (rubEquiv < 20000) {
     const factor = Math.max(0, 1 - 180 / rubEquiv);
-    rate = isInverted ? baseRate / factor : baseRate * factor;
+    rate = baseRate * factor;
     msg = 'Курс на эту сумму чуть ниже основного. При обмене от 20.000 ₽ курс будет значительно выгоднее.';
   } else if (rubEquiv < 100000) {
     msg = 'Готовы сделать обмен в ближайшее время.';
@@ -695,7 +695,7 @@ function applyRateLogic(baseRate, rubEquiv, toCurrency, fromCurrency, isInverted
     // pct === 0 для остальных пар — курс не меняется
 
    if (pct > 0) {
-      rate = isInverted ? baseRate / (1 + pct / 100) : baseRate * (1 + pct / 100);
+      rate = baseRate * (1 + pct / 100);
       note = `↑ +${pct}%`;
     }
 
