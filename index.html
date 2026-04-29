@@ -1313,9 +1313,21 @@ function updateCharCount() {
 function checkSubmitReady() {
   const agree = document.getElementById('agree-check').checked;
   const hasAmount = parseFloat(document.getElementById('input-from').value) > 0;
-  document.getElementById('submit-btn').disabled = !(agree && hasAmount);
+  // Проверка выбран ли город (для доставки и для онлайна с представителем)
+  let cityOk = true;
+  if (state.method === 'delivery') {
+    const delCity = document.getElementById('del-city');
+    if (delCity && !delCity.value) cityOk = false;
+  }
+  // Для онлайна с представителем
+  const repCheck = document.getElementById('rep-check');
+  if (repCheck && repCheck.checked) {
+    const repCity = document.getElementById('rep-city');
+    if (repCity && !repCity.value) cityOk = false;
+  }
+  document.getElementById('submit-btn').disabled = !(agree && hasAmount && cityOk);
 }
-
+  
 // ─── BUILD CONFIRM DATA ───────────────────────────────────────
 function buildConfirmData() {
   const from = state.from, to = state.to;
