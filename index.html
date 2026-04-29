@@ -158,6 +158,28 @@
   select option { background: #1a1a22; }
   input[type=date] { color-scheme: dark; }
   input[type=date]::-webkit-calendar-picker-indicator { filter: invert(.6); }
+
+  .refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
+  border: none;
+  background: rgba(255,255,255,0.08);
+  color: var(--accent);
+  border-radius: 50%;
+  font-size: 12px;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: background 0.2s;
+}
+.refresh-btn:hover { background: rgba(255,255,255,0.15); }
+.refresh-btn:active { transform: scale(0.92); }
+.refresh-btn.refreshing { animation: spin 0.8s linear infinite; opacity: 0.6; }
+@keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+  
 </style>
 </head>
 <style>
@@ -475,6 +497,39 @@ async function loadRatesFromSheets() {
     return null;
   }
 }
+
+// ─── ОБНОВЛЕНИЕ КУРСОВ ─────────────────────────
+async function refreshRates(silent) {
+  const btn = document.getElementById('refresh-rates-btn');
+  if (btn) {
+    btn.classList.add('refreshing');
+    btn.disabled = true;
+  }
+  try {
+    const newRates = await loadRatesFromSheets();
+    if (newRates && Object.keys(newRates).length > 0) {
+      RATES = newRates;
+      ratesLoadedAt = new Date();
+      // Перерасчёт текущей пары
+      onAmountChange('from');
+    } else if (!silent) {
+      // Тихо игнорируем ошибку при автообновлении
+      console.warn('Ошибка обновления курсов');
+    }
+  } catch(e) {
+    console.error('refresh error:', e);
+  } finally {
+    if (btn) {
+      setTimeout(() => {
+        btn.classList.remove('refreshing');
+        btn.disabled = false;
+      }, 500);
+    }
+  }
+}
+
+// Автообновление каждые 15 минут
+setInterval(() => refreshRates(true), 15 * 60 * 1000);
 
 // Маппинг переменных таблицы → ключи RATES приложения
 function buildRatesFromSheets(raw) {
@@ -973,7 +1028,22 @@ const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to, f
     const t = ratesLoadedAt.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
     rn = (rn ? rn + ' · ' : '') + `Курс актуален на ${t}`;
   }
-  document.getElementById('rate-note').textContent = rn;
+  // Текст + кнопка обновления
+  const rnEl = document.getElementById('rate-note');
+  rnEl.innerHTML = '';
+  if (rn) rnEl.appendChild(document.createTextNode(rn));
+  if (ratesLoadedAt) {
+    const refreshBtn = document.createElement('button');
+    refreshBtn.id = 'refresh-rates-btn';
+    refreshBtn.className = 'refresh-btn';
+    refreshBtn.innerHTML = '↻';
+    refreshBtn.title = 'Обновить курсы';
+    refreshBtn.onclick = (e) => {
+      e.preventDefault();
+      refreshRates(false);
+    };
+    rnEl.appendChild(refreshBtn);
+  }
   // Comments
   const comments = [];
   if (msg) {
