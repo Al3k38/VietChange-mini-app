@@ -711,17 +711,17 @@ function applyRateLogic(baseRate, rubEquiv, toCurrency, fromCurrency, isInverted
   }
 
   // Округление курса по правилам — учитываем масштаб
+  // Для дробных курсов < 0.1 НЕ округляем чтобы расчёт суммы был точным
   if (rate >= 1000) {
     rate = Math.round(rate);  // VND-курсы (25000, 316) — целые
   } else if (rate >= 10) {
     rate = Math.round(rate * 10) / 10;  // KZT, RUB к VND и т.п. — до десятых
   } else if (rate >= 1) {
     rate = Math.round(rate * 100) / 100;  // 1.06, 1.21 — до сотых
-  } else if (rate >= 0.01) {
-    rate = Math.round(rate * 1000) / 1000;  // 0.98, 0.96 — до тысячных
-  } else {
-    rate = Math.round(rate * 10000000) / 10000000;  // 0.0000037 — до 7 знаков
+  } else if (rate >= 0.1) {
+    rate = Math.round(rate * 1000) / 1000;  // 0.15 — до тысячных
   }
+  // Для rate < 0.1 не округляем — сохраняем точность для расчёта
   return { rate, commission: 0, note, msg };
 }
   
