@@ -939,18 +939,32 @@ const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to, f
     document.getElementById('input-to').value = result > 0 ? result : '';
     state.amountTo = result;
   }
-  // Rate display
+// Rate display
   const rc = document.getElementById('rate-card');
   rc.classList.remove('hidden');
+  // Определяем направление отображения курса
   const disp = getRateForDisplay(from, to);
-  let rateText;
-  if (disp) {
-    const dispFromCode = disp.displayFrom.replace('_b','').replace('_c','');
-    const dispToCode = disp.displayTo.replace('_b','').replace('_c','');
-    rateText = `Курс на момент заявки: 1 ${dispFromCode} = ${formatNum(disp.rate)} ${dispToCode}`;
+  let dispRate, dispFromCode, dispToCode;
+  if (disp && isInverted) {
+    // Для inverted-пар отображаем как "1 to = X from", где X = 1/rate
+    dispRate = 1 / rate;
+    dispFromCode = to.replace('_b','').replace('_c','');
+    dispToCode = from.replace('_b','').replace('_c','');
   } else {
-    rateText = `Курс на момент заявки: 1 ${from.replace('_b','').replace('_c','')} = ${formatNum(rate)} ${to.replace('_b','').replace('_c','')}`;
+    // Прямое отображение "1 from = X to"
+    dispRate = rate;
+    dispFromCode = from.replace('_b','').replace('_c','');
+    dispToCode = to.replace('_b','').replace('_c','');
   }
+  // Округление для отображения — приятный для глаз вид
+  let dispRateRounded;
+  if (dispRate >= 1000) dispRateRounded = Math.round(dispRate);
+  else if (dispRate >= 10) dispRateRounded = Math.round(dispRate * 10) / 10;
+  else if (dispRate >= 1) dispRateRounded = Math.round(dispRate * 100) / 100;
+  else if (dispRate >= 0.1) dispRateRounded = Math.round(dispRate * 1000) / 1000;
+  else dispRateRounded = Math.round(dispRate * 1000000) / 1000000;
+
+  let rateText = `Курс на момент заявки: 1 ${dispFromCode} = ${formatNum(dispRateRounded)} ${dispToCode}`;
   if (note) rateText += ' · ' + note;
   document.getElementById('rate-text').textContent = rateText;
   let rn = '';
