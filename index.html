@@ -948,6 +948,16 @@ function onAmountChange(source) {
   if (isOther) {
     document.getElementById('rate-card').classList.add('hidden');
     document.getElementById('comments-wrap').innerHTML = '<div class="comment-box comment-warn mt6">📞 Курс обмена — уточнение у оператора</div>';
+    // Очищаем второе поле (где нет введённой суммы) и не считаем
+    if (source === 'from') {
+      document.getElementById('input-to').value = '';
+      state.amountFrom = parseFloat(document.getElementById('input-from').value) || 0;
+      state.amountTo = 0;
+    } else if (source === 'to') {
+      document.getElementById('input-from').value = '';
+      state.amountTo = parseFloat(document.getElementById('input-to').value) || 0;
+      state.amountFrom = 0;
+    }
     return;
   }
   const baseRate = getRate(from, to);
@@ -1362,7 +1372,12 @@ function buildConfirmData() {
   const rb = document.getElementById('req-to-bank'); if(rb) reqs.toBank = rb.value;
   const rn = document.getElementById('req-usdt-net'); if(rn) reqs.usdtNet = rn.value;
   const ra = document.getElementById('req-usdt-addr'); if(ra) reqs.usdtAddr = ra.value;
-  return { from, to, amtFrom, amtTo, method, methodLabel, timeStr, dateStr, location, comment, reqs };
+  // OTHER currency: вручную введённые название валюты и банк
+  const otherFromCur  = document.getElementById('extra-from-currency')?.value || '';
+  const otherFromBank = document.getElementById('extra-from-bank')?.value || '';
+  const otherToCur    = document.getElementById('extra-to-currency')?.value || '';
+  const otherToBank   = document.getElementById('extra-to-bank')?.value || '';
+  return { from, to, amtFrom, amtTo, method, methodLabel, timeStr, dateStr, location, comment, reqs, otherFromCur, otherFromBank, otherToCur, otherToBank };
 }
 
 // ─── GO TO CONFIRM ────────────────────────────────────────────
@@ -1398,8 +1413,15 @@ async function submitOrder() {
   const d = buildConfirmData();
   const fromLabel = LABELS[d.from] || d.from;
   const toLabel = LABELS[d.to] || d.to;
-  const fromCode = d.from.replace('_b','').replace('_c','');
-  const toCode   = d.to.replace('_b','').replace('_c','');
+  let fromCode = d.from.replace('_b','').replace('_c','');
+  let toCode   = d.to.replace('_b','').replace('_c','');
+  // Если выбрана OTHER — используем введённое клиентом название валюты
+  if (d.from === 'OTHER_b' || d.from === 'OTHER_c') {
+    fromCode = d.otherFromCur || 'OTHER';
+  }
+  if (d.to === 'OTHER_b' || d.to === 'OTHER_c') {
+    toCode = d.otherToCur || 'OTHER';
+  }
   const tgUser = (() => { try { return window.Telegram.WebApp.initDataUnsafe?.user; } catch(e) { return null; } })();
   const username  = tgUser?.username ? `@${tgUser.username}` : (tgUser?.first_name || 'Клиент');
   const firstName = tgUser?.first_name || username;
@@ -1444,6 +1466,11 @@ async function submitOrder() {
   showPage('page-success');
   document.getElementById('success-msg').textContent = '⏳ Отправляем заявку...';
 
+  // Если OTHER указан — добавляем банк OTHER в reqs
+  const reqsOut = { ...(d.reqs || {}) };
+  if ((d.from === 'OTHER_b') && d.otherFromBank) reqsOut.fromBank = d.otherFromBank;
+  if ((d.to === 'OTHER_b') && d.otherToBank) reqsOut.toBank = d.otherToBank;
+
   const payload = {
     initData: window.Telegram?.WebApp?.initData || '',
     userId, username, firstName,
@@ -1456,7 +1483,7 @@ async function submitOrder() {
     time: d.timeStr,
     location: d.location || '',
     comment: d.comment || '',
-    reqs: d.reqs || {},
+    reqs: reqsOut,
   };
 
   let orderNum = '';
