@@ -531,6 +531,17 @@ async function refreshRates(silent) {
 // Автообновление каждые 15 минут
 setInterval(() => refreshRates(true), 15 * 60 * 1000);
 
+// Обновляем курсы когда пользователь возвращается в Mini App после сворачивания
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && ratesLoadedAt) {
+    const ageSeconds = (Date.now() - ratesLoadedAt.getTime()) / 1000;
+    // Если последнее обновление было более 1 минуты назад — обновляем
+    if (ageSeconds > 60) {
+      refreshRates(true);
+    }
+  }
+});
+
 // Маппинг переменных таблицы → ключи RATES приложения
 function buildRatesFromSheets(raw) {
   const r = {};
