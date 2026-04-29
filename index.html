@@ -179,6 +179,22 @@
 .refresh-btn:active { transform: scale(0.92); }
 .refresh-btn.refreshing { animation: spin 0.8s linear infinite; opacity: 0.6; }
 @keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+
+#close-app-btn {
+  display: block;
+  width: 100%;
+  margin-top: 24px;
+  padding: 14px;
+  background: linear-gradient(135deg, #5b8def, #7159ec);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s;
+}
+#close-app-btn:active { transform: scale(0.98); opacity: 0.9; }
   
 </style>
 </head>
@@ -460,9 +476,9 @@
     <div class="success-title">Заявка принята!</div>
     <div class="success-sub">Наш оператор свяжется с вами в ближайшее время через Telegram</div>
     <div class="success-msg" id="success-msg"></div>
+    <button id="close-app-btn" onclick="closeApp()" style="display:none;">💬 Вернуться в чат</button>
   </div>
 </div>
-
 <script>
   // Проверка что открыто в Telegram
 if (!window.Telegram?.WebApp?.initData) {
@@ -1460,6 +1476,8 @@ async function submitOrder() {
 
   // Если была ошибка — показываем её клиенту
   if (sendError) {
+    const closeBtn = document.getElementById('close-app-btn');
+    if (closeBtn) closeBtn.style.display = 'none';
     document.querySelector('.success-icon').textContent = '⚠️';
     document.querySelector('.success-title').textContent = 'Что-то пошло не так';
     document.querySelector('.success-sub').textContent = 'Заявка не была отправлена менеджеру';
@@ -1486,11 +1504,28 @@ async function submitOrder() {
     orderNum ? `\n№ заявки: ${orderNum}` : null,
   ].filter(Boolean).join('\n');
 
-  document.getElementById('success-msg').textContent = msg;
+document.getElementById('success-msg').textContent = msg;
+  // Показываем кнопку «Вернуться в чат»
+  const closeBtn = document.getElementById('close-app-btn');
+  if (closeBtn) closeBtn.style.display = 'block';
 }
 
+function closeApp() {
+  try {
+    if (window.Telegram?.WebApp) {
+      window.Telegram.WebApp.close();
+    } else {
+      window.close();
+    }
+  } catch(e) {
+    console.error('close error:', e);
+  }
+}  
+  
 function goBack() { showPage('page-form'); }
 
+  
+  
 function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
