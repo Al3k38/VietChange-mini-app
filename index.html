@@ -238,7 +238,6 @@
             <option value="USDT">💵 USDT</option>
             <option value="VND_b">🇻🇳 VND (безнал)</option>
             <option value="KZT_b">🇰🇿 KZT (безнал)</option>
-            <option value="THB_b">🇹🇭 THB (безнал)</option>
             <option value="OTHER_b">🌐 Другая (безнал)</option>
           </optgroup>
           <optgroup label="Наличные">
@@ -275,7 +274,6 @@
             <option value="RUB_b">🇷🇺 RUB (безнал)</option>
             <option value="USDT">💵 USDT</option>
             <option value="KZT_b">🇰🇿 KZT (безнал)</option>
-            <option value="THB_b">🇹🇭 THB (безнал)</option>
             <option value="OTHER_b">🌐 Другая (безнал)</option>
           </optgroup>
         </select>
@@ -599,51 +597,38 @@ const RATES_FALLBACK = {
   "RUB_b_USD":    87.5,
   "RUB_b_EUR":    100,
   "RUB_b_KZT_b":  5.91,
-  "RUB_b_THB_b":  0.392,
   "USDT_VND":     25500,  "USDT_VND_b":  25500,
   "USDT_RUB_b":   80,
   "USDT_USD":     0.98,
   "USDT_EUR":     0.82,
   "USDT_KZT_b":   498.9,
-  "USDT_THB_b":   33.09,
   "USD_VND":      25500,  "USD_VND_b":   25500,
   "USD_RUB_b":    80,
   "USD_USDT":     0.98,
   "USD_EUR":      0.82,
   "USD_KZT_b":    498.9,
-  "USD_THB_b":    33.09,
   "EUR_VND":      27400,  "EUR_VND_b":   27400,
   "EUR_RUB_b":    86.4,
   "EUR_USDT":     1.08,
   "EUR_USD":      1.08,
   "EUR_KZT_b":    538.8,
-  "EUR_THB_b":    35.73,
   "KZT_b_VND":    48.57,  "KZT_b_VND_b": 48.57,
   "KZT_b_RUB_b":  0.1515,
   "KZT_b_USDT":   0.001838,
   "KZT_b_USD":    0.001838,
   "KZT_b_EUR":    0.001507,
-  "KZT_b_THB_b":  0.06302,
-  "THB_b_VND":    700,    "THB_b_VND_b": 700,
-  "THB_b_RUB_b":  2.19,
-  "THB_b_USDT":   0.0274,
-  "THB_b_USD":    0.0274,
-  "THB_b_EUR":    0.0225,
-  "THB_b_KZT_b":  13.66,
   "VND_b_VND":    0.98,
   "VND_b_RUB_b":  0.003028,
   "VND_b_USDT":   0.00003709,
   "VND_b_USD":    0.00003703,
   "VND_b_EUR":    0.00003037,
   "VND_b_KZT_b":  0.01888,
-  "VND_b_THB_b":  0.001252,
   "VND_VND_b":    0.98,
   "VND_RUB_b":    0.003028,
   "VND_USDT":     0.00003709,
   "VND_USD":      0.00003703,
   "VND_EUR":      0.00003037,
   "VND_KZT_b":    0.01888,
-  "VND_THB_b":    0.001252,
 };
 
 // Активная таблица курсов (заполняется при загрузке из Google Sheets)
@@ -817,7 +802,7 @@ function formatNum(n) {
 // ─── CURRENCY LABELS ─────────────────────────────────────────
 const LABELS = {
   "RUB_b":"🇷🇺 RUB (безнал)", "USDT":"💵 USDT", "VND_b":"🇻🇳 VND (безнал)",
-  "KZT_b":"🇰🇿 KZT (безнал)", "THB_b":"🇹🇭 THB (безнал)", "OTHER_b":"🌐 Другая (безнал)",
+  "KZT_b":"🇰🇿 KZT (безнал)", "OTHER_b":"🌐 Другая (безнал)",
   "USD":"🇺🇸 USD", "VND":"🇻🇳 VND", "EUR":"🇪🇺 EUR", "OTHER_c":"💱 Другая (наличные)"
 };
 const IS_CASH = v => ['USD','VND','EUR','OTHER_c'].includes(v);
