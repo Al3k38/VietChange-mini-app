@@ -81,25 +81,27 @@ function buildGroupMessage(d, orderNum) {
     `<b>📋 Заявка №${orderNum}</b>`,
     `📅 ${nowVN()}`,
     ``,
-    `👤 Клиент: ${d.username || 'неизвестен'} (ID: ${d.userId || '—'})`,
+    `<b>Встреча №</b>`,
     ``,
-    `🔄 Обмен: ${d.fromLabel} → ${d.toLabel}`,
-    `💵 Продажа: <b>${d.amtFrom} ${d.fromCode}</b>`,
-    `💰 Покупка: <b>${d.amtTo} ${d.toCode}</b>`,
-    `📈 Курс: ${d.rate}`,
+    `👤 Клиент: ${d.username || 'неизвестен'} (ID: <code>${d.userId || '—'}</code>)`,
     ``,
-    `🚚 Способ: ${d.method}`,
-    `🗓 Дата: ${d.date}`,
-    `🕒 Время: ${d.time}`,
+    `🔄 <b>Обмен:</b> ${d.fromLabel} → ${d.toLabel}`,
+    `💵 <b>Продажа:</b> ${d.amtFrom} ${d.fromCode}`,
+    `💰 <b>Покупка:</b> ${d.amtTo} ${d.toCode}`,
+    `📈 <b>Курс:</b> ${d.rate}`,
+    ``,
+    `🚚 <b>Способ:</b> ${d.method}`,
+    `🗓 <b>Дата:</b> ${d.date}`,
+    `🕒 <b>Время:</b> ${d.time}`,
   ];
-  if (d.location)                lines.push(`📍 Место: ${d.location}`);
-  if (d.reqs && d.reqs.fromBank) lines.push(`🏦 Банк отправки: ${d.reqs.fromBank}`);
-  if (d.reqs && d.reqs.toName)   lines.push(`👤 Получатель: ${d.reqs.toName}`);
-  if (d.reqs && d.reqs.toPhone)  lines.push(`📱 Телефон/карта: ${d.reqs.toPhone}`);
-  if (d.reqs && d.reqs.toBank)   lines.push(`🏦 Банк получателя: ${d.reqs.toBank}`);
-  if (d.reqs && d.reqs.usdtNet)  lines.push(`🔗 Сеть USDT: ${d.reqs.usdtNet}`);
-  if (d.reqs && d.reqs.usdtAddr) lines.push(`💳 Адрес: ${d.reqs.usdtAddr}`);
-  if (d.comment)                 lines.push(``, `💬 Комментарий: ${d.comment}`);
+  if (d.location)                lines.push(`📍 <b>Место:</b> ${d.location}`);
+  if (d.reqs && d.reqs.fromBank) lines.push(`🏦 <b>Банк отправки:</b> ${d.reqs.fromBank}`);
+  if (d.reqs && d.reqs.toName)   lines.push(`👤 <b>Получатель:</b> ${d.reqs.toName}`);
+  if (d.reqs && d.reqs.toPhone)  lines.push(`📱 <b>Телефон/карта:</b> <code>${d.reqs.toPhone}</code>`);
+  if (d.reqs && d.reqs.toBank)   lines.push(`🏦 <b>Банк получателя:</b> ${d.reqs.toBank}`);
+  if (d.reqs && d.reqs.usdtNet)  lines.push(`🔗 <b>Сеть USDT:</b> ${d.reqs.usdtNet}`);
+  if (d.reqs && d.reqs.usdtAddr) lines.push(`💳 <b>Адрес:</b> <code>${d.reqs.usdtAddr}</code>`);
+  if (d.comment)                 lines.push(``, `💬 <b>Комментарий:</b> ${d.comment}`);
   lines.push(``, `<i>№ заявки: ${orderNum}</i>`);
   return lines.join('\n');
 }
@@ -107,18 +109,21 @@ function buildGroupMessage(d, orderNum) {
 function buildClientMessage(d, orderNum) {
   const name = d.firstName || d.username || 'Клиент';
   const lines = [
-    `${name}, ваша заявка принята! 🎉`,
+    `<b>${name}, ваша заявка принята! 🎉</b>`,
     ``,
-    `Обмен: ${d.fromLabel} → ${d.toLabel}`,
-    `Продажа: <b>${d.amtFrom} ${d.fromCode}</b>`,
-    `Покупка: <b>${d.amtTo} ${d.toCode}</b>`,
-    `Способ: ${d.method}`,
-    `Дата: ${d.date}, ${d.time}`,
+    `<b>№ заявки:</b> ${orderNum}`,
+    ``,
+    `<b>Обмен:</b> ${d.fromLabel} → ${d.toLabel}`,
+    ``,
+    `<b>Продажа:</b> ${d.amtFrom} ${d.fromCode}`,
+    `<b>Покупка:</b> ${d.amtTo} ${d.toCode}`,
+    ``,
+    `<b>Способ:</b> ${d.method}`,
+    `<b>Дата:</b> ${d.date}, ${d.time}`,
   ];
-  if (d.location) lines.push(`Место: ${d.location}`);
-  if (d.comment)  lines.push(`Комментарий: ${d.comment}`);
+  if (d.location) lines.push(`<b>Место:</b> ${d.location}`);
+  if (d.comment)  lines.push(`<b>Комментарий:</b> ${d.comment}`);
   lines.push(``, `<b>Ваша заявка уже в обработке. Ожидайте уведомление 🔔</b>`);
-  lines.push(``, `<i>№ заявки: ${orderNum}</i>`);
   return lines.join('\n');
 }
 
