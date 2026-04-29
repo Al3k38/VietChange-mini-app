@@ -736,11 +736,17 @@ function applyRateLogic(baseRate, rubEquiv, toCurrency, fromCurrency, isInverted
 
   // Малые суммы — комиссия зашита в курс (одинаково для всех пар)
   if (rubEquiv < 15000) {
-    const factor = Math.max(0, 1 - 250 / rubEquiv);
+    // Штраф 70 000 VND переводим в RUB по текущему курсу
+    const vndToRub = getRate('VND_b', 'RUB_b') || (1/357);
+    const penaltyRub = 70000 * vndToRub;
+    const factor = Math.max(0, 1 - penaltyRub / rubEquiv);
     rate = baseRate * factor;
     msg = 'При обмене такой суммы курс менее выгодный. При увеличении суммы от 15.000 ₽ условия будут лучше.';
   } else if (rubEquiv < 20000) {
-    const factor = Math.max(0, 1 - 180 / rubEquiv);
+    // Штраф 50 000 VND переводим в RUB по текущему курсу
+    const vndToRub = getRate('VND_b', 'RUB_b') || (1/357);
+    const penaltyRub = 50000 * vndToRub;
+    const factor = Math.max(0, 1 - penaltyRub / rubEquiv);
     rate = baseRate * factor;
     msg = 'Курс на эту сумму чуть ниже основного. При обмене от 20.000 ₽ курс будет значительно выгоднее.';
   } else if (rubEquiv < 100000) {
