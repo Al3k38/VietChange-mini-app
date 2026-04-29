@@ -117,7 +117,7 @@ function buildClientMessage(d, orderNum) {
   ];
   if (d.location) lines.push(`Место: ${d.location}`);
   if (d.comment)  lines.push(`Комментарий: ${d.comment}`);
-  lines.push(``, `<b>Я сообщу, когда всё будет готово. 🛵</b>`);
+  lines.push(``, `<b>Ваша заявка уже в обработке. Ожидайте уведомление 🔔</b>`);
   lines.push(``, `<i>№ заявки: ${orderNum}</i>`);
   return lines.join('\n');
 }
