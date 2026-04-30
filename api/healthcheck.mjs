@@ -77,6 +77,12 @@ async function checkAppsScript() {
 }
 
 export default async function handler(req, res) {
+  // Защита: проверяем секретный ключ в URL
+  const secret = req.query.secret;
+  if (secret !== process.env.HEALTHCHECK_SECRET) {
+    return res.status(403).json({ ok: false, error: 'Forbidden' });
+  }
+  
   const tg = await checkTelegram();
   const sheets = await checkAppsScript();
 
