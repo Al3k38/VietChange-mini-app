@@ -504,10 +504,14 @@
 </div>
 <script>
   // Проверка что открыто в Telegram
-if (!window.Telegram?.WebApp?.initData) {
+// Проверяем не только initData, но и наличие WebApp объекта + платформу
+const tg = window.Telegram?.WebApp;
+const isInTelegram = tg && (tg.initData || (tg.platform && tg.platform !== 'unknown'));
+if (!isInTelegram) {
   document.getElementById('not-tg-screen').style.display = 'flex';
   document.body.style.overflow = 'hidden';
 }
+  
 // ─── VERCEL API CONFIG ────────────────────────────────────────
 // ⚠️ Замените на URL вашего Vercel проекта после деплоя
 const VERCEL_API_URL = 'https://viet-change-mini-app.vercel.app/api/order';
