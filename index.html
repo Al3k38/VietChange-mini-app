@@ -356,9 +356,14 @@
       <div class="form-row">
         <div class="form-label">Банк</div>
         <select class="form-select" id="atm-bank" onchange="showBankInstruction()">
-          <option value="Vietcombank">Vietcombank</option>
-          <option value="BIDV">BIDV</option>
-        </select>
+        <option value="">Выберите банк ▼</option>
+        <option value="Vietcombank">Vietcombank</option>
+        <option value="BIDV">BIDV</option>
+        <option value="Vietinbank">Vietinbank</option>
+        <option value="Agribank">Agribank</option>
+        <option value="MB Bank">MB Bank</option>
+        <option value="Techcombank">Techcombank</option>
+       </select>
       </div>
     </div>
     <div class="comment-box comment-info mt6" style="font-size:12px">
@@ -608,6 +613,23 @@ function buildRatesFromSheets(raw) {
   return r;
 }
 
+// ─── СПИСКИ БАНКОВ ПО ВАЛЮТАМ ────────────────────
+const BANKS_BY_CURRENCY = {
+  'RUB_b': ['Т-Банк', 'Сбербанк', 'Райффайзен', 'СБП', 'ВТБ', 'Озон Банк', 'Альфа-Банк'],
+  'KZT_b': ['Kaspi Bank', 'Halyk Bank', 'Freedom Bank', 'Jusan Bank', 'Forte Bank', 'BCC'],
+  'VND_b': ['Vietcombank', 'BIDV', 'Vietinbank', 'Agribank', 'MB Bank', 'Techcombank', 'VPBank', 'TPBank', 'ACB', 'Sacombank'],
+};
+
+// Сети USDT
+const USDT_NETWORKS_SEND = ['Bybit UID', 'Binance Pay ID', 'Tron (TRC20)', 'Ethereum (ERC20)', 'BSC (BEP20)', 'TON', 'Solana (SOL)'];
+const USDT_NETWORKS_RECEIVE = ['Bybit UID', 'Binance Pay ID', 'Tron (TRC20)', 'BSC (BEP20)', 'Ethereum (ERC20)', 'TON', 'Solana (SOL)'];
+
+// Хелпер для генерации datalist опций
+function bankOptions(currencyKey) {
+  const list = BANKS_BY_CURRENCY[currencyKey] || [];
+  return list.map(b => `<option value="${b}"></option>`).join('');
+}
+  
 // ─── RATES DATABASE (резервные значения если таблица недоступна) ───
 const RATES_FALLBACK = {
   "RUB_b_VND":    315,    "RUB_b_VND_b": 315,
@@ -1291,22 +1313,38 @@ function updateRequisites() {
   const from = state.from, to = state.to;
   const card = document.getElementById('requisites-card');
   let html = '';
-  // Sending bank fields
-  if (['RUB_b','KZT_b','THB_b','VND_b'].includes(from)) {
-    html += `<div class="form-row"><div class="form-label">С какого банка отправляете?</div><input type="text" class="form-input" id="req-from-bank" placeholder="Например: Сбербанк, Тинькофф, Kaspi..."></div>`;
+  // Sending bank — поле ввода + datalist подсказок
+  if (['RUB_b','KZT_b','VND_b'].includes(from)) {
+    const listId = `bank-list-from`;
+    html += `<div class="form-row"><div class="form-label">С какого банка отправляете?</div>`;
+    html += `<input type="text" class="form-input" id="req-from-bank" list="${listId}" placeholder="Выберите из списка или введите свой">`;
+    html += `<datalist id="${listId}">${bankOptions(from)}</datalist></div>`;
   }
+  // USDT отправка — необязательная сеть
   if (from === 'USDT') {
-    html += `<div class="form-row"><div class="form-label">Сеть отправки USDT</div><select class="form-select" id="req-usdt-from-net"><option>Tron (TRC20)</option><option>Ethereum (ERC20)</option><option>BSC (BEP20)</option><option>TON</option><option>Solana (SOL)</option></select></div>`;
+    html += `<div class="form-row"><div class="form-label">Сеть отправки USDT</div>`;
+    html += `<select class="form-select" id="req-usdt-from-net">`;
+    html += `<option value="">Выберите сеть ▼</option>`;
+    html += USDT_NETWORKS_SEND.map(n => `<option value="${n}">${n}</option>`).join('');
+    html += `</select></div>`;
   }
-  // Receiving fields
-  if (['RUB_b','KZT_b','THB_b','VND_b'].includes(to)) {
+  // Receiving bank
+  if (['RUB_b','KZT_b','VND_b'].includes(to)) {
+    const listId = `bank-list-to`;
     html += `<div class="form-row"><div class="form-label">ФИО получателя</div><input type="text" class="form-input" id="req-to-name" placeholder="Иванов Иван Иванович"></div>`;
     const ph = to === 'RUB_b' ? 'Номер телефона или карты' : 'Номер телефона или счёта';
     html += `<div class="form-row"><div class="form-label">${ph}</div><input type="text" class="form-input" id="req-to-phone" placeholder="+7 900..."></div>`;
-    html += `<div class="form-row" style="border-bottom:none"><div class="form-label">Банк получателя</div><input type="text" class="form-input" id="req-to-bank" placeholder="Банк"></div>`;
+    html += `<div class="form-row" style="border-bottom:none"><div class="form-label">Банк получателя</div>`;
+    html += `<input type="text" class="form-input" id="req-to-bank" list="${listId}" placeholder="Выберите из списка или введите свой">`;
+    html += `<datalist id="${listId}">${bankOptions(to)}</datalist></div>`;
   }
+  // USDT получение — обязательная сеть
   if (to === 'USDT') {
-    html += `<div class="form-row"><div class="form-label">Сеть получения</div><select class="form-select" id="req-usdt-net"><option>Bybit UID</option><option>Binance Pay ID</option><option>Tron (TRC20)</option><option>BSC (BEP20)</option><option>Ethereum (ERC20)</option><option>TON</option><option>Solana (SOL)</option><option>APTOS</option></select></div>`;
+    html += `<div class="form-row"><div class="form-label">Сеть получения</div>`;
+    html += `<select class="form-select" id="req-usdt-net" onchange="checkSubmitReady()">`;
+    html += `<option value="">Выберите сеть ▼</option>`;
+    html += USDT_NETWORKS_RECEIVE.map(n => `<option value="${n}">${n}</option>`).join('');
+    html += `</select></div>`;
     html += `<div class="form-row" style="border-bottom:none"><div class="form-label">Адрес кошелька / UID</div><input type="text" class="form-input" id="req-usdt-addr" placeholder="Введите адрес или UID"></div>`;
   }
   if (!html) html = '<div class="form-row" style="border-bottom:none;color:var(--muted);font-size:13px;">Для данной пары дополнительные реквизиты не требуются</div>';
@@ -1323,19 +1361,24 @@ function updateCharCount() {
 function checkSubmitReady() {
   const agree = document.getElementById('agree-check').checked;
   const hasAmount = parseFloat(document.getElementById('input-from').value) > 0;
-  // Проверка выбран ли город (для доставки и для онлайна с представителем)
+  // Город
   let cityOk = true;
   if (state.method === 'delivery') {
     const delCity = document.getElementById('del-city');
     if (delCity && !delCity.value) cityOk = false;
   }
-  // Для онлайна с представителем
   const repCheck = document.getElementById('rep-check');
   if (repCheck && repCheck.checked) {
     const repCity = document.getElementById('rep-city');
     if (repCity && !repCity.value) cityOk = false;
   }
-  document.getElementById('submit-btn').disabled = !(agree && hasAmount && cityOk);
+  // Сеть USDT обязательна только при ПОЛУЧЕНИИ клиентом USDT (мы отправляем)
+  let usdtOk = true;
+  if (state.to === 'USDT') {
+    const usdtNet = document.getElementById('req-usdt-net');
+    if (usdtNet && !usdtNet.value) usdtOk = false;
+  }
+  document.getElementById('submit-btn').disabled = !(agree && hasAmount && cityOk && usdtOk);
 }
   
 // ─── BUILD CONFIRM DATA ───────────────────────────────────────
