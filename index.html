@@ -357,7 +357,7 @@
         <div class="form-label">Банк</div>
         <select class="form-select" id="atm-bank" onchange="showBankInstruction()">
   <option value="">Выберите банк ▼</option>
-  <option value="Vietcombank">Vietcombank</option>
+  <option value="VietComBank">VietComBank</option>
   <option value="BIDV">BIDV</option>
 </select>
       </div>
@@ -613,7 +613,7 @@ function buildRatesFromSheets(raw) {
 const BANKS_BY_CURRENCY = {
   'RUB_b': ['Т-Банк', 'Сбербанк', 'Райффайзен', 'СБП', 'ВТБ', 'Озон Банк', 'Альфа-Банк'],
   'KZT_b': ['Kaspi Bank', 'Halyk Bank', 'Freedom Bank', 'Jusan Bank', 'Forte Bank', 'BCC'],
-  'VND_b': ['Vietcombank', 'BIDV', 'Vietinbank', 'Agribank', 'MB Bank', 'Techcombank', 'VPBank', 'TPBank', 'ACB', 'Sacombank'],
+  'VND_b': ['VietComBank', 'BIDV', 'VIETINBANK', 'Agribank', 'MB Bank', 'Techcombank', 'VPBank', 'TPBank', 'ACB', 'Sacombank'],
 };
 
 // Сети USDT
@@ -1320,14 +1320,19 @@ function updateRequisites() {
     html += `<input type="text" class="form-input mt6 hidden" id="req-from-bank-other" placeholder="Введите название банка" style="margin-top:8px;">`;
     html += `</div>`;
   }
+  
   // USDT отправка
   if (from === 'USDT') {
     html += `<div class="form-row"><div class="form-label">Сеть отправки USDT</div>`;
-    html += `<select class="form-select" id="req-usdt-from-net">`;
+    html += `<select class="form-select" id="req-usdt-from-net" onchange="onUsdtNetChange('from')">`;
     html += `<option value="">Выберите сеть ▼</option>`;
     html += USDT_NETWORKS_SEND.map(n => `<option value="${n}">${n}</option>`).join('');
-    html += `</select></div>`;
+    html += `<option value="__other__">Другая сеть (вписать)</option>`;
+    html += `</select>`;
+    html += `<input type="text" class="form-input mt6 hidden" id="req-usdt-from-net-other" placeholder="Введите название сети" style="margin-top:8px;">`;
+    html += `</div>`;
   }
+  
   // Receiving bank
   if (['RUB_b','KZT_b','VND_b'].includes(to)) {
     const banks = BANKS_BY_CURRENCY[to] || [];
@@ -1343,23 +1348,40 @@ function updateRequisites() {
     html += `<input type="text" class="form-input mt6 hidden" id="req-to-bank-other" placeholder="Введите название банка" style="margin-top:8px;">`;
     html += `</div>`;
   }
+  
   // USDT получение — обязательная сеть
   if (to === 'USDT') {
     html += `<div class="form-row"><div class="form-label">Сеть получения</div>`;
-    html += `<select class="form-select" id="req-usdt-net" onchange="checkSubmitReady()">`;
+    html += `<select class="form-select" id="req-usdt-net" onchange="onUsdtNetChange('to'); checkSubmitReady();">`;
     html += `<option value="">Выберите сеть ▼</option>`;
     html += USDT_NETWORKS_RECEIVE.map(n => `<option value="${n}">${n}</option>`).join('');
-    html += `</select></div>`;
+    html += `<option value="__other__">Другая сеть (вписать)</option>`;
+    html += `</select>`;
+    html += `<input type="text" class="form-input mt6 hidden" id="req-usdt-net-other" placeholder="Введите название сети" oninput="checkSubmitReady()" style="margin-top:8px;">`;
+    html += `</div>`;
     html += `<div class="form-row" style="border-bottom:none"><div class="form-label">Адрес кошелька / UID</div><input type="text" class="form-input" id="req-usdt-addr" placeholder="Введите адрес или UID"></div>`;
   }
-  if (!html) html = '<div class="form-row" style="border-bottom:none;color:var(--muted);font-size:13px;">Для данной пары дополнительные реквизиты не требуются</div>';
-  card.innerHTML = html;
-}
 
 // Хендлер: при выборе "Другой банк (вписать)" показываем поле ввода
 function onBankSelectChange(direction) {
   const sel = document.getElementById(`req-${direction}-bank-select`);
   const other = document.getElementById(`req-${direction}-bank-other`);
+  if (!sel || !other) return;
+  if (sel.value === '__other__') {
+    other.classList.remove('hidden');
+    other.focus();
+  } else {
+    other.classList.add('hidden');
+    other.value = '';
+  }
+}
+
+  // Хендлер: при выборе "Другая сеть (вписать)" показываем поле ввода
+function onUsdtNetChange(direction) {
+  const selId = direction === 'to' ? 'req-usdt-net' : 'req-usdt-from-net';
+  const otherId = direction === 'to' ? 'req-usdt-net-other' : 'req-usdt-from-net-other';
+  const sel = document.getElementById(selId);
+  const other = document.getElementById(otherId);
   if (!sel || !other) return;
   if (sel.value === '__other__') {
     other.classList.remove('hidden');
@@ -1396,9 +1418,12 @@ function checkSubmitReady() {
   if (state.to === 'USDT') {
     const usdtNet = document.getElementById('req-usdt-net');
     if (usdtNet && !usdtNet.value) usdtOk = false;
+    // Если выбрано "Другая сеть" — должно быть введено название
+    if (usdtNet && usdtNet.value === '__other__') {
+      const usdtNetOther = document.getElementById('req-usdt-net-other');
+      if (!usdtNetOther || !usdtNetOther.value.trim()) usdtOk = false;
+    }
   }
-  document.getElementById('submit-btn').disabled = !(agree && hasAmount && cityOk && usdtOk);
-}
   
 // ─── BUILD CONFIRM DATA ───────────────────────────────────────
 function buildConfirmData() {
@@ -1442,9 +1467,18 @@ function buildConfirmData() {
   }
   const rt = document.getElementById('req-to-name'); if(rt) reqs.toName = rt.value;
   const rp = document.getElementById('req-to-phone'); if(rp) reqs.toPhone = rp.value;
-  const rn = document.getElementById('req-usdt-net'); if(rn) reqs.usdtNet = rn.value;
-  const ra = document.getElementById('req-usdt-addr'); if(ra) reqs.usdtAddr = ra.value;
-  const rfn = document.getElementById('req-usdt-from-net'); if(rfn) reqs.usdtFromNet = rfn.value;
+  // Сеть USDT получения: либо из select, либо из поля "Другое"
+  const rnSel = document.getElementById('req-usdt-net');
+  const rnOther = document.getElementById('req-usdt-net-other');
+  if (rnSel) {
+    reqs.usdtNet = (rnSel.value === '__other__') ? (rnOther?.value || '') : rnSel.value;
+  }
+  // Сеть USDT отправки
+  const rfnSel = document.getElementById('req-usdt-from-net');
+  const rfnOther = document.getElementById('req-usdt-from-net-other');
+  if (rfnSel) {
+    reqs.usdtFromNet = (rfnSel.value === '__other__') ? (rfnOther?.value || '') : rfnSel.value;
+  }
   
   // OTHER currency: вручную введённые название валюты и банк
   const otherFromCur  = document.getElementById('extra-from-currency')?.value || '';
