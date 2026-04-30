@@ -356,14 +356,10 @@
       <div class="form-row">
         <div class="form-label">Банк</div>
         <select class="form-select" id="atm-bank" onchange="showBankInstruction()">
-        <option value="">Выберите банк ▼</option>
-        <option value="Vietcombank">Vietcombank</option>
-        <option value="BIDV">BIDV</option>
-        <option value="Vietinbank">Vietinbank</option>
-        <option value="Agribank">Agribank</option>
-        <option value="MB Bank">MB Bank</option>
-        <option value="Techcombank">Techcombank</option>
-       </select>
+  <option value="">Выберите банк ▼</option>
+  <option value="Vietcombank">Vietcombank</option>
+  <option value="BIDV">BIDV</option>
+</select>
       </div>
     </div>
     <div class="comment-box comment-info mt6" style="font-size:12px">
@@ -1308,19 +1304,23 @@ function setNearestTime() {
   document.getElementById('custom-date-wrap').classList.add('hidden');
 }
 
-// ─── REQUISITES ───────────────────────────────────────────────
 function updateRequisites() {
   const from = state.from, to = state.to;
   const card = document.getElementById('requisites-card');
   let html = '';
-  // Sending bank — поле ввода + datalist подсказок
+  // Sending bank — выпадающий список + поле для "другое"
   if (['RUB_b','KZT_b','VND_b'].includes(from)) {
-    const listId = `bank-list-from`;
+    const banks = BANKS_BY_CURRENCY[from] || [];
     html += `<div class="form-row"><div class="form-label">С какого банка отправляете?</div>`;
-    html += `<input type="text" class="form-input" id="req-from-bank" list="${listId}" placeholder="Выберите из списка или введите свой">`;
-    html += `<datalist id="${listId}">${bankOptions(from)}</datalist></div>`;
+    html += `<select class="form-select" id="req-from-bank-select" onchange="onBankSelectChange('from')">`;
+    html += `<option value="">Выберите банк ▼</option>`;
+    html += banks.map(b => `<option value="${b}">${b}</option>`).join('');
+    html += `<option value="__other__">Другой банк (вписать)</option>`;
+    html += `</select>`;
+    html += `<input type="text" class="form-input mt6 hidden" id="req-from-bank-other" placeholder="Введите название банка" style="margin-top:8px;">`;
+    html += `</div>`;
   }
-  // USDT отправка — необязательная сеть
+  // USDT отправка
   if (from === 'USDT') {
     html += `<div class="form-row"><div class="form-label">Сеть отправки USDT</div>`;
     html += `<select class="form-select" id="req-usdt-from-net">`;
@@ -1330,13 +1330,18 @@ function updateRequisites() {
   }
   // Receiving bank
   if (['RUB_b','KZT_b','VND_b'].includes(to)) {
-    const listId = `bank-list-to`;
+    const banks = BANKS_BY_CURRENCY[to] || [];
     html += `<div class="form-row"><div class="form-label">ФИО получателя</div><input type="text" class="form-input" id="req-to-name" placeholder="Иванов Иван Иванович"></div>`;
     const ph = to === 'RUB_b' ? 'Номер телефона или карты' : 'Номер телефона или счёта';
     html += `<div class="form-row"><div class="form-label">${ph}</div><input type="text" class="form-input" id="req-to-phone" placeholder="+7 900..."></div>`;
     html += `<div class="form-row" style="border-bottom:none"><div class="form-label">Банк получателя</div>`;
-    html += `<input type="text" class="form-input" id="req-to-bank" list="${listId}" placeholder="Выберите из списка или введите свой">`;
-    html += `<datalist id="${listId}">${bankOptions(to)}</datalist></div>`;
+    html += `<select class="form-select" id="req-to-bank-select" onchange="onBankSelectChange('to')">`;
+    html += `<option value="">Выберите банк ▼</option>`;
+    html += banks.map(b => `<option value="${b}">${b}</option>`).join('');
+    html += `<option value="__other__">Другой банк (вписать)</option>`;
+    html += `</select>`;
+    html += `<input type="text" class="form-input mt6 hidden" id="req-to-bank-other" placeholder="Введите название банка" style="margin-top:8px;">`;
+    html += `</div>`;
   }
   // USDT получение — обязательная сеть
   if (to === 'USDT') {
@@ -1349,6 +1354,20 @@ function updateRequisites() {
   }
   if (!html) html = '<div class="form-row" style="border-bottom:none;color:var(--muted);font-size:13px;">Для данной пары дополнительные реквизиты не требуются</div>';
   card.innerHTML = html;
+}
+
+// Хендлер: при выборе "Другой банк (вписать)" показываем поле ввода
+function onBankSelectChange(direction) {
+  const sel = document.getElementById(`req-${direction}-bank-select`);
+  const other = document.getElementById(`req-${direction}-bank-other`);
+  if (!sel || !other) return;
+  if (sel.value === '__other__') {
+    other.classList.remove('hidden');
+    other.focus();
+  } else {
+    other.classList.add('hidden');
+    other.value = '';
+  }
 }
 
 // ─── COMMENT COUNTER ─────────────────────────────────────────
@@ -1409,12 +1428,24 @@ function buildConfirmData() {
   const comment = document.getElementById('order-comment').value;
   // Requisites
   const reqs = {};
-  const rf = document.getElementById('req-from-bank'); if(rf) reqs.fromBank = rf.value;
+  // Банк отправки: либо из select, либо из поля "Другое"
+  const rfSel = document.getElementById('req-from-bank-select');
+  const rfOther = document.getElementById('req-from-bank-other');
+  if (rfSel) {
+    reqs.fromBank = (rfSel.value === '__other__') ? (rfOther?.value || '') : rfSel.value;
+  }
+  // Банк получателя
+  const rbSel = document.getElementById('req-to-bank-select');
+  const rbOther = document.getElementById('req-to-bank-other');
+  if (rbSel) {
+    reqs.toBank = (rbSel.value === '__other__') ? (rbOther?.value || '') : rbSel.value;
+  }
   const rt = document.getElementById('req-to-name'); if(rt) reqs.toName = rt.value;
   const rp = document.getElementById('req-to-phone'); if(rp) reqs.toPhone = rp.value;
-  const rb = document.getElementById('req-to-bank'); if(rb) reqs.toBank = rb.value;
   const rn = document.getElementById('req-usdt-net'); if(rn) reqs.usdtNet = rn.value;
   const ra = document.getElementById('req-usdt-addr'); if(ra) reqs.usdtAddr = ra.value;
+  const rfn = document.getElementById('req-usdt-from-net'); if(rfn) reqs.usdtFromNet = rfn.value;
+  
   // OTHER currency: вручную введённые название валюты и банк
   const otherFromCur  = document.getElementById('extra-from-currency')?.value || '';
   const otherFromBank = document.getElementById('extra-from-bank')?.value || '';
