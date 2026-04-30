@@ -1367,9 +1367,6 @@ function updateRequisites() {
 
 // Хендлер: при выборе "Другой банк (вписать)" показываем поле ввода
 function onBankSelectChange(direction) {
-
-// Хендлер: при выборе "Другой банк (вписать)" показываем поле ввода
-function onBankSelectChange(direction) {
   const sel = document.getElementById(`req-${direction}-bank-select`);
   const other = document.getElementById(`req-${direction}-bank-other`);
   if (!sel || !other) return;
