@@ -195,6 +195,25 @@
   transition: transform 0.15s, opacity 0.15s;
 }
 #close-app-btn:active { transform: scale(0.98); opacity: 0.9; }
+
+/* Подсветка обязательных незаполненных полей */
+.required-empty {
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2) !important;
+  background: rgba(245, 158, 11, 0.05) !important;
+}
+.required-empty option { background: #1a1a22; }
+
+/* Подсказка над кнопкой отправки */
+.submit-hint {
+  text-align: center;
+  font-size: 12px;
+  color: #f59e0b;
+  margin-bottom: 8px;
+  padding: 0 8px;
+  display: none;
+}
+.submit-hint.visible { display: block; }
   
 </style>
 </head>
@@ -443,8 +462,9 @@
   </div>
 
   <div class="submit-area">
+    <div class="submit-hint" id="submit-hint">⚠️ Заполните выделенные поля</div>
     <button class="submit-btn" id="submit-btn" onclick="goToConfirm()" disabled>Перейти к подтверждению →</button>
-  </div>
+</div>
 </div>
 
 <!-- PAGE 2: CONFIRM -->
@@ -1411,29 +1431,70 @@ function updateCharCount() {
 function checkSubmitReady() {
   const agree = document.getElementById('agree-check').checked;
   const hasAmount = parseFloat(document.getElementById('input-from').value) > 0;
-  // Город
+  // Подсветка поля суммы
+  const inputFrom = document.getElementById('input-from');
+  if (inputFrom) inputFrom.classList.toggle('required-empty', !hasAmount);
+
+  // Город (для доставки и для онлайна с представителем)
   let cityOk = true;
   if (state.method === 'delivery') {
     const delCity = document.getElementById('del-city');
-    if (delCity && !delCity.value) cityOk = false;
+    if (delCity) {
+      delCity.classList.toggle('required-empty', !delCity.value);
+      if (!delCity.value) cityOk = false;
+    }
   }
   const repCheck = document.getElementById('rep-check');
   if (repCheck && repCheck.checked) {
     const repCity = document.getElementById('rep-city');
-    if (repCity && !repCity.value) cityOk = false;
+    if (repCity) {
+      repCity.classList.toggle('required-empty', !repCity.value);
+      if (!repCity.value) cityOk = false;
+    }
   }
-  // Сеть USDT обязательна только при ПОЛУЧЕНИИ клиентом USDT (мы отправляем)
+
+  // Сеть USDT обязательна только при ПОЛУЧЕНИИ клиентом USDT
   let usdtOk = true;
   if (state.to === 'USDT') {
     const usdtNet = document.getElementById('req-usdt-net');
-    if (usdtNet && !usdtNet.value) usdtOk = false;
-    // Если выбрано "Другая сеть" — должно быть введено название
-    if (usdtNet && usdtNet.value === '__other__') {
-      const usdtNetOther = document.getElementById('req-usdt-net-other');
-      if (!usdtNetOther || !usdtNetOther.value.trim()) usdtOk = false;
+    if (usdtNet) {
+      usdtNet.classList.toggle('required-empty', !usdtNet.value);
+      if (!usdtNet.value) usdtOk = false;
+      // Если выбрано "Другая сеть" — должно быть введено название
+      if (usdtNet.value === '__other__') {
+        const usdtNetOther = document.getElementById('req-usdt-net-other');
+        if (usdtNetOther) {
+          const filled = usdtNetOther.value.trim();
+          usdtNetOther.classList.toggle('required-empty', !filled);
+          if (!filled) usdtOk = false;
+        }
+      }
     }
   }
-  document.getElementById('submit-btn').disabled = !(agree && hasAmount && cityOk && usdtOk);
+
+  // Согласие — подсветим если не отмечено
+  const agreeRow = document.querySelector('label.checkbox-row input#agree-check')?.parentElement;
+  if (agreeRow) agreeRow.style.outline = !agree ? '2px solid rgba(245,158,11,0.4)' : 'none';
+
+  // Финальная активация кнопки
+  const ready = agree && hasAmount && cityOk && usdtOk;
+  document.getElementById('submit-btn').disabled = !ready;
+
+  // Подсказка над кнопкой
+  const hint = document.getElementById('submit-hint');
+  if (hint) {
+    if (!ready) {
+      const missing = [];
+      if (!hasAmount) missing.push('сумма');
+      if (!cityOk) missing.push('город');
+      if (!usdtOk) missing.push('сеть USDT');
+      if (!agree) missing.push('согласие');
+      hint.textContent = `⚠️ Заполните: ${missing.join(', ')}`;
+      hint.classList.add('visible');
+    } else {
+      hint.classList.remove('visible');
+    }
+  }
 }
 
 // ─── BUILD CONFIRM DATA ───────────────────────────────────────
