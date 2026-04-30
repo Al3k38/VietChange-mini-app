@@ -1430,7 +1430,9 @@ function checkSubmitReady() {
       if (!usdtNetOther || !usdtNetOther.value.trim()) usdtOk = false;
     }
   }
-  
+  document.getElementById('submit-btn').disabled = !(agree && hasAmount && cityOk && usdtOk);
+}
+
 // ─── BUILD CONFIRM DATA ───────────────────────────────────────
 function buildConfirmData() {
   const from = state.from, to = state.to;
