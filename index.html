@@ -1359,8 +1359,14 @@ function updateRequisites() {
     html += `</select>`;
     html += `<input type="text" class="form-input mt6 hidden" id="req-usdt-net-other" placeholder="Введите название сети" oninput="checkSubmitReady()" style="margin-top:8px;">`;
     html += `</div>`;
-    html += `<div class="form-row" style="border-bottom:none"><div class="form-label">Адрес кошелька / UID</div><input type="text" class="form-input" id="req-usdt-addr" placeholder="Введите адрес или UID"></div>`;
+   html += `<div class="form-row" style="border-bottom:none"><div class="form-label">Адрес кошелька / UID</div><input type="text" class="form-input" id="req-usdt-addr" placeholder="Введите адрес или UID"></div>`;
   }
+  if (!html) html = '<div class="form-row" style="border-bottom:none;color:var(--muted);font-size:13px;">Для данной пары дополнительные реквизиты не требуются</div>';
+  card.innerHTML = html;
+}
+
+// Хендлер: при выборе "Другой банк (вписать)" показываем поле ввода
+function onBankSelectChange(direction) {
 
 // Хендлер: при выборе "Другой банк (вписать)" показываем поле ввода
 function onBankSelectChange(direction) {
