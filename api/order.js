@@ -78,11 +78,10 @@ async function appendToSheet(data) {
 
 function buildGroupMessage(d, orderNum) {
   const lines = [
-    `<b>📋 Заявка №${orderNum}</b>`,
-    `📅 ${nowVN()}`,
-    ``,
     `<b>Встреча №</b>`,
+    `${nowVN()} 📅`,
     ``,
+    `<b>📋 Заявка №${orderNum}</b>`,
     `<b>👤 Клиент:</b> ${d.username || 'неизвестен'} (ID: <code>${d.userId || '—'}</code>)`,
     ``,
     `🔄 <b>Обмен: ${d.fromLabel} → ${d.toLabel}</b>`,
