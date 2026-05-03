@@ -214,6 +214,39 @@
   display: none;
 }
 .submit-hint.visible { display: block; }
+
+.header {
+  position: relative;
+}
+.support-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(46, 46, 62, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+.support-btn:hover, .support-btn:active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  transform: scale(1.05);
+}
+.support-btn svg {
+  width: 18px;
+  height: 18px;
+}
   
 </style>
 </head>
@@ -257,9 +290,16 @@
 <div class="page active" id="page-form">
 
   <div class="header">
-    <div class="header-title">💱 VietChange</div>
-    <div class="header-sub">Обмен валют · Вьетнам</div>
-  </div>
+  <a href="https://t.me/SashaSupport" target="_blank" class="support-btn" title="Поддержка">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 14v-3a9 9 0 0 1 18 0v3"/>
+      <path d="M3 14a2 2 0 0 1 2-2h1a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H5a2 2 0 0 1-2-2v-2z"/>
+      <path d="M21 14a2 2 0 0 0-2-2h-1a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h.5a2.5 2.5 0 0 1 0 5H14"/>
+    </svg>
+  </a>
+  <div class="header-title">💱 VietChange</div>
+  <div class="header-sub">Обмен валют · Вьетнам</div>
+</div>
 
   <!-- CURRENCY PAIR -->
   <div class="section" style="margin-top:14px">
