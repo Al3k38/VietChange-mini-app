@@ -1611,7 +1611,7 @@ async function submitOrder() {
   const firstName = tgUser?.first_name || username;
   const userId    = tgUser?.id || null;
 
-  // Курс в формате как в плашке Mini App — с правильным направлением и округлением
+  // Курс с применённой тарифной сеткой — такой же как у клиента в плашке
   const baseRate = getRate(d.from, d.to);
   let rateStr = 'уточнение у оператора';
   if (baseRate) {
@@ -1625,14 +1625,22 @@ async function submitOrder() {
     if (!RATES[directKey] && RATES[reverseKey] && typeof RATES[reverseKey] === 'object' && RATES[reverseKey].op === 'mul') {
       isInverted = true;
     }
+    
+    // Считаем рублёвый эквивалент для применения тарифной сетки
+    const amtFromNum = parseFloat(String(d.amtFrom).replace(/[^\d.,]/g,'').replace(',','.')) || 0;
+    const rubEquiv = getRubEquiv(amtFromNum, d.from);
+    
+    // Применяем тарифную сетку (как в плашке клиенту)
+    const appliedRate = applyRateLogic(baseRate, rubEquiv, d.to, d.from, isInverted);
+    
     // Для inverted-пар отображаем курс как "1 to = X from"
     let dispRate, dispFromCode, dispToCode;
     if (isInverted) {
-      dispRate = 1 / baseRate;
+      dispRate = 1 / appliedRate;
       dispFromCode = toCode;
       dispToCode = fromCode;
     } else {
-      dispRate = baseRate;
+      dispRate = appliedRate;
       dispFromCode = fromCode;
       dispToCode = toCode;
     }
