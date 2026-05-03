@@ -991,15 +991,18 @@ function onAmountChange(source) {
   if (isOther) {
     document.getElementById('rate-card').classList.add('hidden');
     document.getElementById('comments-wrap').innerHTML = '<div class="comment-box comment-warn mt6">📞 Курс обмена — уточнение у оператора</div>';
-    // Очищаем второе поле (где нет введённой суммы) и не считаем
     if (source === 'from') {
       document.getElementById('input-to').value = '';
       state.amountFrom = parseFloat(document.getElementById('input-from').value) || 0;
       state.amountTo = 0;
+      state.amountFromRaw = state.amountFrom;
+      state.amountToRaw = 0;
     } else if (source === 'to') {
       document.getElementById('input-from').value = '';
       state.amountTo = parseFloat(document.getElementById('input-to').value) || 0;
       state.amountFrom = 0;
+      state.amountToRaw = state.amountTo;
+      state.amountFromRaw = 0;
     }
     return;
   }
@@ -1013,23 +1016,20 @@ function onAmountChange(source) {
   let amountTo = parseFloat(document.getElementById('input-to').value) || 0;
   const rubEquiv = getRubEquiv(source === 'from' ? amountFrom : (amountTo / baseRate), from);
   // Определяем — это инвертированная пара (op:'div')?
-const directKey = `${from}_${to}`;
-const reverseKey = `${to}_${from}`;
-let isInverted = false;
-if (RATES[directKey] && typeof RATES[directKey] === 'object' && RATES[directKey].op === 'div') {
-  isInverted = true;
-}
-if (!RATES[directKey] && RATES[reverseKey] && typeof RATES[reverseKey] === 'object' && RATES[reverseKey].op === 'mul') {
-  isInverted = true;
-}
-const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to, from, isInverted);
-  // Commission in target currency
+  const directKey = `${from}_${to}`;
+  const reverseKey = `${to}_${from}`;
+  let isInverted = false;
+  if (RATES[directKey] && typeof RATES[directKey] === 'object' && RATES[directKey].op === 'div') {
+    isInverted = true;
+  }
+  if (!RATES[directKey] && RATES[reverseKey] && typeof RATES[reverseKey] === 'object' && RATES[reverseKey].op === 'mul') {
+    isInverted = true;
+  }
+  const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to, from, isInverted);
   const commInTo = commission > 0 ? (commission / (RATES['RUB_b_'+to] || (1/RATES[to+'_RUB_b']) || 0)) : 0;
-  // ATM-режим: VND кратна 100.000, RUB пересчитывается обратно
-  // Пересчёт происходит только при смене метода/пары, не во время ввода
   const isATM = state.method === 'atm' && (to === 'VND' || to === 'VND_b');
 
-if (source === 'from' && amountFrom > 0) {
+  if (source === 'from' && amountFrom > 0) {
     // Клиент ввёл amountFrom → точное значение из инпута
     state.amountFromRaw = amountFrom;
     let resultRaw = amountFrom * rate;
@@ -1041,7 +1041,8 @@ if (source === 'from' && amountFrom > 0) {
     }
     state.amountToRaw = result;
     document.getElementById('input-to').value = result > 0 ? result : '';
-    state.amountFrom = amountFrom; state.amountTo = result;
+    state.amountFrom = amountFrom;
+    state.amountTo = result;
   } else if (source === 'to' && amountTo > 0) {
     // Клиент ввёл amountTo → точное значение из инпута
     let result = amountTo;
@@ -1056,7 +1057,8 @@ if (source === 'from' && amountFrom > 0) {
     let needed = roundAmount(neededRaw, from);
     state.amountFromRaw = neededRaw;
     document.getElementById('input-from').value = needed > 0 ? needed : '';
-    state.amountFrom = needed; state.amountTo = result;
+    state.amountFrom = needed;
+    state.amountTo = result;
   } else if (source === 'method' && (state.amountFromRaw > 0 || state.amountToRaw > 0)) {
     // При смене метода — считаем от ТОЧНЫХ значений (raw)
     if (isATM) {
@@ -1070,7 +1072,8 @@ if (source === 'from' && amountFrom > 0) {
       state.amountToRaw = resultTo;
       document.getElementById('input-from').value = newFromDisplay;
       document.getElementById('input-to').value = resultTo;
-      state.amountFrom = newFromDisplay; state.amountTo = resultTo;
+      state.amountFrom = newFromDisplay;
+      state.amountTo = resultTo;
     } else {
       // Не банкомат: считаем от raw To если он есть, иначе от raw From
       if (state.amountToRaw > 0) {
@@ -1080,19 +1083,20 @@ if (source === 'from' && amountFrom > 0) {
         state.amountFromRaw = neededRaw;
         document.getElementById('input-from').value = needed;
         document.getElementById('input-to').value = rawTo;
-        state.amountFrom = needed; state.amountTo = rawTo;
+        state.amountFrom = needed;
+        state.amountTo = rawTo;
       } else if (state.amountFromRaw > 0) {
         const rawFrom = state.amountFromRaw;
         let resultRaw = rawFrom * rate;
         let result = roundAmount(resultRaw, to);
         state.amountToRaw = resultRaw;
         document.getElementById('input-to').value = result;
-        state.amountFrom = amountFrom; state.amountTo = result;
+        state.amountFrom = amountFrom;
+        state.amountTo = result;
       }
     }
-  }   
-}    
-
+  }
+}
   
 // Rate display
   const rc = document.getElementById('rate-card');
