@@ -1244,18 +1244,19 @@ function selectMethod(m, silent) {
   document.getElementById('atm-section').classList.toggle('hidden', m !== 'atm');
   document.getElementById('delivery-section').classList.toggle('hidden', m !== 'delivery');
   if (m === 'atm') showBankInstruction();
-  // ATM comment
-  const comments = document.getElementById('comments-wrap');
+  
+  if (!silent) {
+    checkSubmitReady();
+    // Пересчёт суммы (важно для ATM-режима с кратностью 100.000 VND)
+    onAmountChange('method');
+  }
+  
+  // ATM comment — добавляем ПОСЛЕ onAmountChange чтобы плашка не перетёрлась
   const atmNote = document.querySelector('.atm-note');
   if (atmNote) atmNote.remove();
   if (m === 'atm') {
     document.getElementById('comments-wrap').insertAdjacentHTML('beforeend',
-      '<div class="comment-box comment-info mt6 atm-note">🏧 Банкомат выдаёт только суммы, кратные 100.000 VND. Итоговая сумма будет скорректирована.</div>');
-  }
- if (!silent) {
-    checkSubmitReady();
-    // Пересчёт суммы (важно для ATM-режима с кратностью 100.000 VND)
-    onAmountChange('method');
+      '<div class="comment-box comment-info mt6 atm-note">🏧 Банкомат выдаёт только суммы, кратные 100.000 VND. Итоговая сумма скорректирована.</div>');
   }
 }
 
