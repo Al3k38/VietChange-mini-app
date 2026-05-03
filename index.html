@@ -1631,8 +1631,8 @@ async function submitOrder() {
     const rubEquiv = getRubEquiv(amtFromNum, d.from);
     
     // Применяем тарифную сетку (как в плашке клиенту)
-    const appliedRate = applyRateLogic(baseRate, rubEquiv, d.to, d.from, isInverted);
-    alert(`baseRate=${baseRate}\nrubEquiv=${rubEquiv}\nappliedRate=${appliedRate}\nisInverted=${isInverted}\namtFromNum=${amtFromNum}\nfromCode=${fromCode}\ntoCode=${toCode}`);
+    const result = applyRateLogic(baseRate, rubEquiv, d.to, d.from, isInverted);
+    const appliedRate = result.rate;
     
     // Для inverted-пар отображаем курс как "1 to = X from"
     let dispRate, dispFromCode, dispToCode;
