@@ -1159,8 +1159,9 @@ function onAmountChange(source) {
   if (from === 'USDT' || to === 'USDT') comments.push('<div class="comment-box comment-warn mt6">⚠️ Принимаем только «белые» USDT. Не используйте Telegram-обменники без верификации, Garantex, Bitpapa, BestChange, КриптоБот, биржа WEX и др. Возможна AML проверка кошелька.</div>');
   document.getElementById('comments-wrap').innerHTML = comments.join('');
   checkSubmitReady();
+ }
 }
-
+  
 // ─── SWAP ─────────────────────────────────────────────────────
 function swapCurrencies() {
   const sf = document.getElementById('sel-from');
