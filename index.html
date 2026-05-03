@@ -891,6 +891,7 @@ const ATM_PAIRS = new Set([
 let state = {
   from: 'RUB_b', to: 'VND',
   amountFrom: '', amountTo: '',
+  amountFromRaw: 0, amountToRaw: 0,
   method: '', date: 'today', timeSlot: 0,
   customDate: '',
 };
@@ -1028,16 +1029,21 @@ const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to, f
   // Пересчёт происходит только при смене метода/пары, не во время ввода
   const isATM = state.method === 'atm' && (to === 'VND' || to === 'VND_b');
 
-  if (source === 'from' && amountFrom > 0) {
-    let result = amountFrom * rate;
+if (source === 'from' && amountFrom > 0) {
+    // Клиент ввёл amountFrom → точное значение из инпута
+    state.amountFromRaw = amountFrom;
+    let resultRaw = amountFrom * rate;
+    let result;
     if (isATM) {
-      result = Math.round(result / 100000) * 100000;
+      result = Math.round(resultRaw / 100000) * 100000;
     } else {
-      result = roundAmount(result, to);
+      result = roundAmount(resultRaw, to);
     }
+    state.amountToRaw = result;
     document.getElementById('input-to').value = result > 0 ? result : '';
     state.amountFrom = amountFrom; state.amountTo = result;
   } else if (source === 'to' && amountTo > 0) {
+    // Клиент ввёл amountTo → точное значение из инпута
     let result = amountTo;
     if (isATM) {
       result = Math.round(result / 100000) * 100000;
@@ -1045,27 +1051,49 @@ const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to, f
         document.getElementById('input-to').value = result;
       }
     }
-    let needed = result / rate;
-    needed = roundAmount(needed, from);
+    state.amountToRaw = result;
+    let neededRaw = result / rate;
+    let needed = roundAmount(neededRaw, from);
+    state.amountFromRaw = neededRaw;
     document.getElementById('input-from').value = needed > 0 ? needed : '';
     state.amountFrom = needed; state.amountTo = result;
-  } else if (source === 'method' && amountFrom > 0) {
-    // При смене метода — пересчитываем от текущего "Отдаёте"
-    let result = amountFrom * rate;
+  } else if (source === 'method' && (state.amountFromRaw > 0 || state.amountToRaw > 0)) {
+    // При смене метода — считаем от ТОЧНЫХ значений (raw)
     if (isATM) {
-      // Банкомат: округляем VND до кратной 100.000 и пересчитываем RUB обратно
-      result = Math.round(result / 100000) * 100000;
-      let newAmountFrom = roundAmount(result / rate, from);
-      document.getElementById('input-from').value = newAmountFrom;
-      state.amountFrom = newAmountFrom;
+      // Банкомат: считаем от raw From → To кратно 100k → пересчёт обратно From
+      const rawFrom = state.amountFromRaw || amountFrom;
+      let resultTo = rawFrom * rate;
+      resultTo = Math.round(resultTo / 100000) * 100000;
+      let newFromRaw = resultTo / rate;
+      let newFromDisplay = roundAmount(newFromRaw, from);
+      state.amountFromRaw = newFromRaw;
+      state.amountToRaw = resultTo;
+      document.getElementById('input-from').value = newFromDisplay;
+      document.getElementById('input-to').value = resultTo;
+      state.amountFrom = newFromDisplay; state.amountTo = resultTo;
     } else {
-      // Не банкомат: обычное округление
-      result = roundAmount(result, to);
-      state.amountFrom = amountFrom;
+      // Не банкомат: считаем от raw To если он есть, иначе от raw From
+      if (state.amountToRaw > 0) {
+        const rawTo = state.amountToRaw;
+        let neededRaw = rawTo / rate;
+        let needed = roundAmount(neededRaw, from);
+        state.amountFromRaw = neededRaw;
+        document.getElementById('input-from').value = needed;
+        document.getElementById('input-to').value = rawTo;
+        state.amountFrom = needed; state.amountTo = rawTo;
+      } else if (state.amountFromRaw > 0) {
+        const rawFrom = state.amountFromRaw;
+        let resultRaw = rawFrom * rate;
+        let result = roundAmount(resultRaw, to);
+        state.amountToRaw = resultRaw;
+        document.getElementById('input-to').value = result;
+        state.amountFrom = amountFrom; state.amountTo = result;
+      }
     }
-    document.getElementById('input-to').value = result > 0 ? result : '';
-    state.amountTo = result;
-  }
+  }   
+}    
+
+  
 // Rate display
   const rc = document.getElementById('rate-card');
   rc.classList.remove('hidden');
