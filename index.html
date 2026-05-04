@@ -572,6 +572,13 @@ async function loadRatesFromSheets() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (!data.ok || !data.rates) return null;
+    // Сохраняем свежие курсы в localStorage для будущего fallback
+    try {
+      localStorage.setItem('vc_rates_cache', JSON.stringify({
+        rates: data.rates,
+        savedAt: Date.now()
+      }));
+    } catch(e) { /* localStorage может быть недоступен */ }
     return data.rates;
   } catch(e) {
     console.error('Rates load error:', e);
@@ -731,9 +738,25 @@ const RATES_FALLBACK = {
   "VND_KZT_b":    0.01888,
 };
 
-// Активная таблица курсов (заполняется при загрузке из Google Sheets)
+// Получает кешированные курсы из localStorage если они не старше недели
+function getCachedRates() {
+  try {
+    const cached = localStorage.getItem('vc_rates_cache');
+    if (!cached) return null;
+    const parsed = JSON.parse(cached);
+    if (!parsed.rates || !parsed.savedAt) return null;
+    const ageHours = (Date.now() - parsed.savedAt) / 3600000;
+    if (ageHours > 168) return null; // старше недели — не используем
+    return { rates: parsed.rates, ageHours };
+  } catch(e) {
+    return null;
+  }
+}
+
+// Активная таблица курсов (заполняется при загрузке из Google Sheets, кеша или хардкода)
 let RATES = { ...RATES_FALLBACK };
 let ratesLoadedAt = null; // время загрузки курсов
+let ratesSource = 'fallback'; // 'live' / 'cache' / 'fallback'
 
 // Rate to RUB (for equivalence calculation)
 function getToRub(currency) {
@@ -968,34 +991,45 @@ async function initApp() {
   const raw = await loadRatesFromSheets();
 
   if (raw && Object.keys(raw).length > 0) {
-    RATES = raw;
-    ratesLoadedAt = new Date();
-    loadingScreen.style.display = 'none';
-  } else {
-    // Ошибка — показываем сообщение с возможностью продолжить с резервными курсами
-    loaderText.style.display = 'none';
-    document.querySelector('.loader-spinner').style.display = 'none';
-    const errDiv = document.createElement('div');
-    errDiv.className = 'loader-error';
-    errDiv.innerHTML = `⚠️ Не удалось загрузить курсы.<br>Проверьте доступ к таблице или продолжите с последними известными курсами.`;
-    const retryBtn = document.createElement('button');
-    retryBtn.className = 'loader-retry';
-    retryBtn.textContent = '🔄 Повторить';
-    retryBtn.onclick = () => { location.reload(); };
-    const continueBtn = document.createElement('button');
-    continueBtn.className = 'loader-retry';
-    continueBtn.style.background = '#555';
-    continueBtn.style.marginLeft = '8px';
-    continueBtn.textContent = 'Продолжить с резервным курсом';
-    continueBtn.onclick = () => {
-      RATES = { ...RATES_FALLBACK };
+      RATES = raw;
+      ratesLoadedAt = new Date();
+      ratesSource = 'live';
       loadingScreen.style.display = 'none';
-      onPairChange(); updateTimeSlider();
-    };
-    document.getElementById('loading-screen').appendChild(errDiv);
-    document.getElementById('loading-screen').appendChild(retryBtn);
-    document.getElementById('loading-screen').appendChild(continueBtn);
-    return;
+    } else {
+    // Sheets недоступны — пробуем кеш из localStorage
+    const cached = getCachedRates();
+    if (cached) {
+      RATES = cached.rates;
+      ratesLoadedAt = new Date(Date.now() - cached.ageHours * 3600000);
+      ratesSource = 'cache';
+      loadingScreen.style.display = 'none';
+    } else {
+      // Кеша нет — показываем экран ошибки с возможностью продолжить с хардкод-резерва
+      loaderText.style.display = 'none';
+      document.querySelector('.loader-spinner').style.display = 'none';
+      const errDiv = document.createElement('div');
+      errDiv.className = 'loader-error';
+      errDiv.innerHTML = `⚠️ Не удалось загрузить курсы.<br>Проверьте доступ к таблице или продолжите с последними известными курсами.`;
+      const retryBtn = document.createElement('button');
+      retryBtn.className = 'loader-retry';
+      retryBtn.textContent = '🔄 Повторить';
+      retryBtn.onclick = () => { location.reload(); };
+      const continueBtn = document.createElement('button');
+      continueBtn.className = 'loader-retry';
+      continueBtn.style.background = '#555';
+      continueBtn.style.marginLeft = '8px';
+      continueBtn.textContent = 'Продолжить с резервным курсом';
+      continueBtn.onclick = () => {
+        RATES = { ...RATES_FALLBACK };
+        ratesSource = 'fallback';
+        loadingScreen.style.display = 'none';
+        onPairChange(); updateTimeSlider();
+      };
+      document.getElementById('loading-screen').appendChild(errDiv);
+      document.getElementById('loading-screen').appendChild(retryBtn);
+      document.getElementById('loading-screen').appendChild(continueBtn);
+      return;
+    }
   }
 
   onPairChange();
