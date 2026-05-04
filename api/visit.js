@@ -27,6 +27,28 @@ function verifyTelegramInitData(initData, botToken) {
   } catch { return null; }
 }
 
+// Примерное определение года регистрации Telegram-аккаунта по ID
+function estimateAccountYear(userId) {
+  const id = Number(userId);
+  if (!id || isNaN(id)) return null;
+  const milestones = [
+    { id: 100000000,  year: 2014 },
+    { id: 500000000,  year: 2016 },
+    { id: 1000000000, year: 2018 },
+    { id: 1500000000, year: 2020 },
+    { id: 2000000000, year: 2021 },
+    { id: 5000000000, year: 2022 },
+    { id: 6000000000, year: 2023 },
+    { id: 7000000000, year: 2024 },
+    { id: 7500000000, year: 2025 },
+    { id: 8000000000, year: 2026 },
+  ];
+  for (const m of milestones) {
+    if (id < m.id) return m.year;
+  }
+  return 2026;
+}
+
 function nowVN() {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString()
     .replace('T', ' ').substring(0, 16) + ' (GMT+7)';
@@ -52,15 +74,20 @@ async function tgSend(chatId, text, threadId) {
 }
 
 async function logToSheet(data) {
-  if (!APPS_SCRIPT_URL) return;
+  if (!APPS_SCRIPT_URL) return null;
   try {
-    await fetch(APPS_SCRIPT_URL, {
+    const res = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'visit', ...data }),
       redirect: 'follow',
     });
-  } catch(e) { console.error('Sheets error:', e); }
+    const json = await res.json().catch(() => ({}));
+    return json;
+  } catch(e) { 
+    console.error('Sheets error:', e);
+    return null;
+  }
 }
 
 export default async function handler(req, res) {
@@ -86,28 +113,69 @@ export default async function handler(req, res) {
     const tgVersion = d.version  || '';
     const datetime  = nowVN();
 
+    // Сначала пишем в Sheets и получаем firstSeen
+    const sheetResp = await logToSheet({
+      datetime, userId, username, firstName, lastName,
+      lang, isPremium, platform, tgVersion,
+    });
+    
+    // Дата первого визита (из ответа Apps Script)
+    const firstSeen = sheetResp && sheetResp.firstSeen ? sheetResp.firstSeen : null;
+    
+    // Примерный год регистрации Telegram-аккаунта
+    const accountYear = estimateAccountYear(userId);
+    const currentYear = new Date().getFullYear();
+    let accountAgeText = '';
+    if (accountYear) {
+      const age = currentYear - accountYear;
+      if (age <= 0) accountAgeText = `🕐 <b>Аккаунт:</b> ~${accountYear} (новый)`;
+      else if (age === 1) accountAgeText = `🕐 <b>Аккаунт:</b> ~${accountYear} (${age} год)`;
+      else if (age < 5) accountAgeText = `🕐 <b>Аккаунт:</b> ~${accountYear} (${age} года)`;
+      else accountAgeText = `🕐 <b>Аккаунт:</b> ~${accountYear} (${age} лет)`;
+    }
+    
+    // С нами с — расчёт возраста
+    let withUsText = '';
+    if (firstSeen) {
+      const firstDate = new Date(firstSeen);
+      const ms = Date.now() - firstDate.getTime();
+      const days = Math.floor(ms / 86400000);
+      const ddmm = `${String(firstDate.getDate()).padStart(2,'0')}.${String(firstDate.getMonth()+1).padStart(2,'0')}.${firstDate.getFullYear()}`;
+      let ageStr;
+      if (days === 0) ageStr = 'сегодня';
+      else if (days === 1) ageStr = 'вчера';
+      else if (days < 7) ageStr = `${days} дн.`;
+      else if (days < 30) {
+        const w = Math.floor(days / 7);
+        ageStr = `${w} ${w === 1 ? 'неделя' : w < 5 ? 'недели' : 'недель'} назад`;
+      } else if (days < 365) {
+        const m = Math.floor(days / 30);
+        ageStr = `${m} ${m === 1 ? 'месяц' : m < 5 ? 'месяца' : 'месяцев'} назад`;
+      } else {
+        const y = Math.floor(days / 365);
+        ageStr = `${y} ${y === 1 ? 'год' : y < 5 ? 'года' : 'лет'} назад`;
+      }
+      withUsText = `👋 <b>С нами с:</b> ${ddmm} (${ageStr})`;
+    }
+
     // Сообщение в General-топик
     const msg = [
       `👤 <b>Клиент в Mini App</b>`,
       `📅 ${datetime}`,
       ``,
-      `Имя: ${firstName} ${lastName}`.trim(),
-      username ? `Username: ${username}` : null,
-      `ID: <code>${userId}</code>`,
-      `Язык: ${lang || '—'} · Premium: ${isPremium}`,
-      `Платформа: ${platform || '—'} · Telegram ${tgVersion || '—'}`,
+      `<b>Имя:</b> ${firstName} ${lastName}`.trim(),
+      username ? `<b>Username:</b> ${username}` : null,
+      `<b>ID:</b> <code>${userId}</code>`,
+      accountAgeText || null,
+      withUsText || null,
+      `<b>Язык:</b> ${lang || '—'} · <b>Premium:</b> ${isPremium}`,
+      `<b>Платформа:</b> ${platform || '—'} · Telegram ${tgVersion || '—'}`,
     ].filter(Boolean).join('\n');
 
     if (GROUP_ID) {
-      // Для General-топика отправляем без thread_id
       const r = await tgSend(GROUP_ID, msg, null);
       console.log('TG SEND result:', JSON.stringify(r));
     }
-
-    await logToSheet({
-      datetime, userId, username, firstName, lastName,
-      lang, isPremium, platform, tgVersion,
-    });
 
     return res.status(200).json({ ok: true });
 } catch(e) {
