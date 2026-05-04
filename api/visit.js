@@ -113,10 +113,14 @@ export default async function handler(req, res) {
     const tgVersion = d.version  || '';
     const datetime  = nowVN();
 
+    // Сначала вычисляем accountYear для записи в Sheets
+    const accountYearForSheet = estimateAccountYear(userId);
+    
     // Сначала пишем в Sheets и получаем firstSeen
     const sheetResp = await logToSheet({
       datetime, userId, username, firstName, lastName,
       lang, isPremium, platform, tgVersion,
+      accountYear: accountYearForSheet,
     });
     
     // Дата первого визита (из ответа Apps Script)
