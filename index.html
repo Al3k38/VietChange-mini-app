@@ -1242,9 +1242,9 @@ function onAmountChange(source) {
       else if (ageHours > 0) ageText = ` (обновлены ${ageHours} ${ageHours === 1 ? 'час' : ageHours < 5 ? 'часа' : 'часов'} назад)`;
       else ageText = ' (обновлены недавно)';
     }
-    comments.push(`<div class="comment-box comment-warn mt6">⚠️ Возможна неактуальность курсов${ageText}. Уточните курс у оператора при оформлении заявки.</div>`);
+    comments.push(`<div class="comment-box comment-warn mt6">⚠️ Возможна неактуальность курсов${ageText}.</div>`);
   } else if (ratesSource === 'fallback') {
-    comments.push('<div class="comment-box comment-warn mt6">🔴 Используются резервные курсы. Возможны существенные расхождения с актуальным рынком — обязательно уточните курс у оператора.</div>');
+    comments.push('<div class="comment-box comment-warn mt6">🔴 Используются резервные курсы. Возможны существенные расхождения в суммах — обязательно уточните курс у оператора.</div>');
   }
   document.getElementById('comments-wrap').innerHTML = comments.join('');
   checkSubmitReady();
