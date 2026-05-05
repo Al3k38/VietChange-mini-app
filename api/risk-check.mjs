@@ -247,3 +247,10 @@ export function formatRiskBlock(risk) {
   lines[lines.length - 1] = lines[lines.length - 1].replace('├', '└');
   return lines.join('\n');
 }
+
+/**
+ * Короткая строка для основной заявки (одна строка с итогом).
+ */
+export function formatRiskShort(risk) {
+  return `🛡 <b>Риск-проверка: ${risk.emoji} ${risk.summary}</b>`;
+}
