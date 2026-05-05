@@ -1,6 +1,7 @@
-// api/order.js — Vercel Serverless Function with Telegram InitData verification + PuzzleBot
+// api/order.js — Vercel Serverless Function with Telegram InitData verification + PuzzleBot + Risk Check
 
 import crypto from 'crypto';
+import { assessRisk, formatRiskBlock } from './risk-check.mjs';
 
 const BOT_TOKEN        = process.env.BOT_TOKEN;
 const GROUP_ID         = process.env.GROUP_ID;
@@ -40,6 +41,20 @@ function nowVN() {
     .replace('T', ' ').substring(0, 16) + ' (GMT+7)';
 }
 
+// Грубая оценка суммы в рублях для риск-сигнала «крупная сумма + новый аккаунт»
+// Не для бухгалтерии — только для триггера риска.
+function estimateRubEquiv(amount, code) {
+  const amt = parseFloat(String(amount).replace(/\s/g, '').replace(',', '.')) || 0;
+  const rates = {
+    RUB_b: 1, RUB: 1,
+    USD: 90, USDT: 90,
+    EUR: 100,
+    VND: 0.0036, VND_b: 0.0036,
+    KZT: 0.18, KZT_b: 0.18,
+  };
+  return amt * (rates[code] || 0);
+}
+
 async function tgSend(chatId, text, threadId) {
   try {
     const body = { chat_id: chatId, text, parse_mode: 'HTML' };
@@ -76,58 +91,39 @@ async function appendToSheet(data) {
   } catch(e) { console.error('Sheets error:', e); }
 }
 
-function buildGroupMessage(d, orderNum) {
-  // Имя клиента — ссылка на чат через tg://user?id=...
-  const clientName = d.firstName || (d.username && d.username.replace('@','')) || 'Клиент';
-  const userIdSafe = d.userId || '';
-  const clientLink = userIdSafe 
-    ? `<a href="tg://user?id=${userIdSafe}">${clientName}</a>` 
-    : clientName;
-  const usernamePart = (d.username && d.username.startsWith('@')) ? ` · ${d.username}` : '';
-  
-  // Флаги стран по коду валюты
-  const FLAGS = {
-    'RUB': '🇷🇺', 'USDT': '💵', 'VND': '🇻🇳', 
-    'KZT': '🇰🇿', 'USD': '🇺🇸', 'EUR': '🇪🇺',
-  };
-  const fromFlag = FLAGS[d.fromCode] || '';
-  const toFlag = FLAGS[d.toCode] || '';
-  
+function buildGroupMessage(d, orderNum, risk) {
   const lines = [
     `<b>Встреча №</b>`,
-    `${nowVN()}`,
+    `${nowVN()} 📅`,
     ``,
     `<b>📋 Заявка №${orderNum}</b>`,
-    `<b>Клиент:</b> ${clientLink}${usernamePart}`,
-    `<b>ID:</b> <code>${userIdSafe || '—'}</code>`,
+    `<b>👤 Клиент:</b> ${d.username || 'неизвестен'} (ID: <code>${d.userId || '—'}</code>)`,
     ``,
-    `<b>Обмен: ${d.fromLabel} → ${d.toLabel}</b>`,
-    `<b>Продажа:</b> <code>${d.amtFrom}</code> ${fromFlag} ${d.fromCode}`,
-    `<b>Покупка:</b> <code>${d.amtTo}</code> ${toFlag} ${d.toCode}`,
-    `<pre>Курс: ${d.rate}  </pre>`,
+    `🔄 <b>Обмен: ${d.fromLabel} → ${d.toLabel}</b>`,
+    `💵 <b>Продажа:</b> ${d.amtFrom} ${d.fromCode}`,
+    `💰 <b>Покупка:</b> ${d.amtTo} ${d.toCode}`,
+    `📈 <b>Курс:</b> ${d.rate}`,
     ``,
-    `<b>Способ:</b> ${d.method}`,
-    `<b>Дата:</b> ${d.date}`,
-    `<b>Время:</b> ${d.time}`,
+    `🚚 <b>Способ:</b> ${d.method}`,
+    `🗓 <b>Дата:</b> ${d.date}`,
+    `🕒 <b>Время:</b> ${d.time}`,
   ];
-  if (d.location) lines.push(`📍 <b>Место:</b> ${d.location}`);
-  
-  // Блок реквизитов — собираем массив и оборачиваем в <pre>
-  const reqLines = [];
-  if (d.reqs && d.reqs.fromBank) reqLines.push(`Банк отправки: ${d.reqs.fromBank}     `);
-  if (d.reqs && d.reqs.toName)   reqLines.push(`Получатель: ${d.reqs.toName}     `);
-  if (d.reqs && d.reqs.toPhone)  reqLines.push(`Телефон/карта: ${d.reqs.toPhone}     `);
-  if (d.reqs && d.reqs.toBank)   reqLines.push(`Банк получателя: ${d.reqs.toBank}     `);
-  if (d.reqs && d.reqs.usdtNet)  reqLines.push(`Сеть USDT: ${d.reqs.usdtNet}     `);
-  if (d.reqs && d.reqs.usdtAddr) reqLines.push(`Адрес: ${d.reqs.usdtAddr}     `);
-  
-  if (reqLines.length > 0) {
-    lines.push(``, `<pre>${reqLines.join('\n')}</pre>`);
-  }
-  
-  if (d.comment) lines.push(``, `<b>Комментарий:</b> ${d.comment}`);
-  lines.push(``, `<i>№ заявки: ${orderNum}</i>`);
-  return lines.join('\n');
+  if (d.location)                lines.push(`📍 <b>Место:</b> ${d.location}`);
+  if (d.reqs && d.reqs.fromBank) lines.push(`🏦 <b>Банк отправки:</b> ${d.reqs.fromBank}`);
+  if (d.reqs && d.reqs.toName)   lines.push(`👤 <b>Получатель:</b> ${d.reqs.toName}`);
+  if (d.reqs && d.reqs.toPhone)  lines.push(`📱 <b>Телефон/карта:</b> <code>${d.reqs.toPhone}</code>`);
+  if (d.reqs && d.reqs.toBank)   lines.push(`🏦 <b>Банк получателя:</b> ${d.reqs.toBank}`);
+  if (d.reqs && d.reqs.usdtNet)  lines.push(`🔗 <b>Сеть USDT:</b> ${d.reqs.usdtNet}`);
+  if (d.reqs && d.reqs.usdtAddr) lines.push(`💳 <b>Адрес:</b> <code>${d.reqs.usdtAddr}</code>`);
+  if (d.comment)                 lines.push(``, `💬 <b>Комментарий:</b> ${d.comment}`);
+
+  let message = lines.join('\n');
+
+  // Риск-блок — добавляется в конец, перед подписью
+  if (risk) message += '\n' + formatRiskBlock(risk);
+
+  message += `\n\n<i>№ заявки: ${orderNum}</i>`;
+  return message;
 }
 
 function buildClientMessage(d, orderNum) {
@@ -174,7 +170,18 @@ export default async function handler(req, res) {
     const orderNum = genOrderNum();
     const datetime = nowVN();
 
-    if (GROUP_ID) await tgSend(GROUP_ID, buildGroupMessage(d, orderNum), THREAD_ID);
+    // === Risk check (CAS + LolsBot + возраст аккаунта) ===
+    // Никогда не блокирует заявку — только добавляет инфу для менеджера.
+    let risk = null;
+    try {
+      const rubEquiv = estimateRubEquiv(d.amtFrom, d.fromCode);
+      risk = await assessRisk(d.userId, rubEquiv);
+    } catch (e) {
+      console.error('Risk check failed:', e);
+      // не падаем — заявка должна уйти в любом случае
+    }
+
+    if (GROUP_ID) await tgSend(GROUP_ID, buildGroupMessage(d, orderNum, risk), THREAD_ID);
     if (d.userId) {
       await tgSend(d.userId, buildClientMessage(d, orderNum));
       // Через секунду вызываем команду PuzzleBot — клиент получит кнопки
@@ -197,6 +204,8 @@ export default async function handler(req, res) {
       location:  d.location  || '',
       reqs:      d.reqs      || {},
       comment:   d.comment   || '',
+      // Новое поле для аналитики (опционально, можно игнорить в Apps Script)
+      risk:      risk ? `${risk.summary} (${risk.flags.join('; ')})` : '',
     });
 
     return res.status(200).json({ ok: true, orderNum });
