@@ -1,6 +1,7 @@
 // api/order.js — Vercel Serverless Function with Telegram InitData verification + PuzzleBot
 
 import crypto from 'crypto';
+import { assessRisk, formatRiskBlock, formatRiskShort } from './risk-check.mjs';
 
 const BOT_TOKEN        = process.env.BOT_TOKEN;
 const GROUP_ID         = process.env.GROUP_ID;
@@ -40,10 +41,11 @@ function nowVN() {
     .replace('T', ' ').substring(0, 16) + ' (GMT+7)';
 }
 
-async function tgSend(chatId, text, threadId) {
+async function tgSend(chatId, text, threadId, replyToMessageId) {
   try {
     const body = { chat_id: chatId, text, parse_mode: 'HTML' };
     if (threadId) body.message_thread_id = parseInt(threadId);
+    if (replyToMessageId) body.reply_to_message_id = parseInt(replyToMessageId);
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -174,7 +176,53 @@ export default async function handler(req, res) {
     const orderNum = genOrderNum();
     const datetime = nowVN();
 
-    if (GROUP_ID) await tgSend(GROUP_ID, buildGroupMessage(d, orderNum), THREAD_ID);
+    // Считаем рублёвый эквивалент суммы для риск-проверки
+    let rubEquiv = 0;
+    try {
+      const amt = parseFloat(String(d.amtFrom).replace(/[^\d.,]/g,'').replace(',','.')) || 0;
+      if (d.fromCode === 'RUB') {
+        rubEquiv = amt;
+      } else if (d.fromCode === 'USDT' || d.fromCode === 'USD') {
+        rubEquiv = amt * 80;
+      } else if (d.fromCode === 'EUR') {
+        rubEquiv = amt * 86;
+      } else if (d.fromCode === 'KZT') {
+        rubEquiv = amt * 0.18;
+      } else if (d.fromCode === 'VND') {
+        rubEquiv = amt * 0.003;
+      }
+    } catch(e) { /* без эквивалента — не критично */ }
+
+    // Риск-проверка клиента (CAS, LolsBot, эвристики)
+    let riskShort = '';
+    let riskBlock = '';
+    try {
+      const risk = await assessRisk(d.userId, { 
+        username: d.username, 
+        rubEquiv 
+      });
+      riskShort = formatRiskShort(risk);
+      riskBlock = formatRiskBlock(risk);
+      console.log('Risk check:', risk.summary, '| flags:', risk.flags.length);
+    } catch(e) {
+      console.error('Risk check failed:', e);
+    }
+
+    // Основное сообщение в группу — с краткой строкой риска внизу
+    const groupMsg = buildGroupMessage(d, orderNum) + (riskShort ? '\n\n' + riskShort : '');
+    let orderMessageId = null;
+    if (GROUP_ID) {
+      const orderResp = await tgSend(GROUP_ID, groupMsg, THREAD_ID);
+      // Сохраняем message_id для reply с деталями риска
+      if (orderResp && orderResp.ok && orderResp.result) {
+        orderMessageId = orderResp.result.message_id;
+      }
+    }
+    
+    // Детали риск-проверки — отдельным сообщением в reply на заявку
+    if (GROUP_ID && riskBlock && orderMessageId) {
+      await tgSend(GROUP_ID, riskBlock, THREAD_ID, orderMessageId);
+    }
     if (d.userId) {
       await tgSend(d.userId, buildClientMessage(d, orderNum));
       // Через секунду вызываем команду PuzzleBot — клиент получит кнопки
