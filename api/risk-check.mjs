@@ -81,6 +81,7 @@ async function checkCas(userId) {
     clearTimeout(timer);
     if (!res.ok) return { listed: null, error: `HTTP ${res.status}` };
     const data = await res.json();
+    console.log(`[CAS] userId=${userId} response:`, JSON.stringify(data));
     if (data.ok === true && data.result) {
       return { 
         listed: true, 
@@ -89,6 +90,7 @@ async function checkCas(userId) {
     }
     return { listed: false };
   } catch (e) {
+    console.error(`[CAS] userId=${userId} error:`, e.message);
     return { listed: null, error: e.message || 'fetch error' };
   }
 }
@@ -110,6 +112,7 @@ async function checkLolsBot(userId) {
     clearTimeout(timer);
     if (!res.ok) return { banned: null, error: `HTTP ${res.status}` };
     const data = await res.json();
+    console.log(`[LolsBot] userId=${userId} response:`, JSON.stringify(data));
     const banned = 
       data.banned === true || 
       data.is_banned === true ||
@@ -122,6 +125,7 @@ async function checkLolsBot(userId) {
       raw: data,
     };
   } catch (e) {
+    console.error(`[LolsBot] userId=${userId} error:`, e.message);
     return { banned: null, error: e.message || 'fetch error' };
   }
 }
