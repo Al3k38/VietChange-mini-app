@@ -1484,20 +1484,41 @@ function updateRequisites() {
     html += `</div>`;
   }
   
-  // Receiving bank
+  // Receiving bank — порядок: Банк → Реквизит → ФИО
   if (['RUB_b','KZT_b','VND_b'].includes(to)) {
     const banks = BANKS_BY_CURRENCY[to] || [];
-    html += `<div class="form-row"><div class="form-label">ФИО получателя</div><input type="text" class="form-input" id="req-to-name" placeholder="Иванов Иван Иванович"></div>`;
-    const ph = to === 'RUB_b' ? 'Номер телефона или карты' : 'Номер телефона или счёта';
-    html += `<div class="form-row"><div class="form-label">${ph}</div><input type="text" class="form-input" id="req-to-phone" placeholder="+7 900..."></div>`;
-    html += `<div class="form-row" style="border-bottom:none"><div class="form-label">Банк получателя</div>`;
-    html += `<select class="form-select" id="req-to-bank-select" onchange="onBankSelectChange('to')">`;
+    
+    // 1. Банк получателя
+    html += `<div class="form-row"><div class="form-label">Банк получателя</div>`;
+    html += `<select class="form-select" id="req-to-bank-select" onchange="onBankSelectChange('to'); checkSubmitReady();">`;
     html += `<option value="">Выберите банк ▼</option>`;
     html += banks.map(b => `<option value="${b}">${b}</option>`).join('');
     html += `<option value="__other__">Другой банк (вписать)</option>`;
     html += `</select>`;
     html += `<input type="text" class="form-input mt6 hidden" id="req-to-bank-other" placeholder="Введите название банка" style="margin-top:8px;">`;
     html += `</div>`;
+    
+    // 2. Реквизит получателя — обязательный, placeholder зависит от валюты
+    let phPlaceholder, phHint;
+    if (to === 'RUB_b') {
+      phPlaceholder = '+7 900... или номер карты';
+      phHint = 'Номер телефона или номер карты';
+    } else if (to === 'KZT_b') {
+      phPlaceholder = '+7 700... или номер карты';
+      phHint = 'Номер карты или номер телефона';
+    } else {
+      // VND_b
+      phPlaceholder = 'Введите номер счёта';
+      phHint = 'Введите строго номер счёта';
+    }
+    html += `<div class="form-row">`;
+    html += `<div class="form-label">Реквизит получателя <span style="color:var(--accent)">*</span></div>`;
+    html += `<input type="text" class="form-input" id="req-to-phone" placeholder="${phPlaceholder}" oninput="checkSubmitReady()">`;
+    html += `<div id="req-to-phone-hint" style="font-size:12px;color:var(--muted);margin-top:6px;">${phHint}</div>`;
+    html += `</div>`;
+    
+    // 3. ФИО получателя
+    html += `<div class="form-row" style="border-bottom:none"><div class="form-label">ФИО получателя</div><input type="text" class="form-input" id="req-to-name" placeholder="Иванов Иван Иванович"></div>`;
   }
   
   // USDT получение — обязательная сеть
@@ -1510,40 +1531,11 @@ function updateRequisites() {
     html += `</select>`;
     html += `<input type="text" class="form-input mt6 hidden" id="req-usdt-net-other" placeholder="Введите название сети" oninput="checkSubmitReady()" style="margin-top:8px;">`;
     html += `</div>`;
-   html += `<div class="form-row" style="border-bottom:none"><div class="form-label">Адрес кошелька / UID</div><input type="text" class="form-input" id="req-usdt-addr" placeholder="Введите адрес или UID"></div>`;
+    html += `<div class="form-row" style="border-bottom:none"><div class="form-label">Адрес кошелька / UID</div><input type="text" class="form-input" id="req-usdt-addr" placeholder="Введите адрес или UID"></div>`;
   }
+  
   if (!html) html = '<div class="form-row" style="border-bottom:none;color:var(--muted);font-size:13px;">Для данной пары дополнительные реквизиты не требуются</div>';
   card.innerHTML = html;
-}
-
-// Хендлер: при выборе "Другой банк (вписать)" показываем поле ввода
-function onBankSelectChange(direction) {
-  const sel = document.getElementById(`req-${direction}-bank-select`);
-  const other = document.getElementById(`req-${direction}-bank-other`);
-  if (!sel || !other) return;
-  if (sel.value === '__other__') {
-    other.classList.remove('hidden');
-    other.focus();
-  } else {
-    other.classList.add('hidden');
-    other.value = '';
-  }
-}
-
-  // Хендлер: при выборе "Другая сеть (вписать)" показываем поле ввода
-function onUsdtNetChange(direction) {
-  const selId = direction === 'to' ? 'req-usdt-net' : 'req-usdt-from-net';
-  const otherId = direction === 'to' ? 'req-usdt-net-other' : 'req-usdt-from-net-other';
-  const sel = document.getElementById(selId);
-  const other = document.getElementById(otherId);
-  if (!sel || !other) return;
-  if (sel.value === '__other__') {
-    other.classList.remove('hidden');
-    other.focus();
-  } else {
-    other.classList.add('hidden');
-    other.value = '';
-  }
 }
 
 // ─── COMMENT COUNTER ─────────────────────────────────────────
