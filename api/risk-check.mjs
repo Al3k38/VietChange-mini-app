@@ -115,8 +115,7 @@ async function checkLolsBot(userId) {
       data.is_banned === true ||
       data.scammer === true || 
       data.is_scammer === true ||
-      data.lols_ban === true ||
-      data.ok === true;
+      data.lols_ban === true;
     return { 
       banned, 
       spam_factor: data.spam_factor || null,
