@@ -103,7 +103,7 @@ function buildGroupMessage(d, orderNum) {
     `<b>Обмен: ${d.fromLabel} → ${d.toLabel}</b>`,
     `<b>Продажа:</b> <code>${d.amtFrom}</code> ${fromFlag} ${d.fromCode}`,
     `<b>Покупка:</b> <code>${d.amtTo}</code> ${toFlag} ${d.toCode}`,
-    `<b>Курс:</b> ${d.rate}`,
+    `<code><b>Курс:</b> ${d.rate}  </code>`,
     ``,
     `<b>Способ:</b> ${d.method}`,
     `<b>Дата:</b> ${d.date}`,
