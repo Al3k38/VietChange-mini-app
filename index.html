@@ -201,6 +201,8 @@
   border-color: #f59e0b !important;
   box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2) !important;
   background: rgba(245, 158, 11, 0.05) !important;
+  border-radius: 12px !important;
+  outline: none !important;
 }
 .required-empty option { background: #1a1a22; }
 
@@ -1499,22 +1501,18 @@ function updateRequisites() {
     html += `</div>`;
     
     // 2. Реквизит получателя — обязательный, placeholder зависит от валюты
-    let phPlaceholder, phHint;
+    let phPlaceholder;
     if (to === 'RUB_b') {
       phPlaceholder = '+7 900... или номер карты';
-      phHint = 'Номер телефона или номер карты';
     } else if (to === 'KZT_b') {
       phPlaceholder = '+7 700... или номер карты';
-      phHint = 'Номер карты или номер телефона';
     } else {
       // VND_b
       phPlaceholder = 'Введите номер счёта';
-      phHint = 'Введите строго номер счёта';
     }
     html += `<div class="form-row">`;
-    html += `<div class="form-label">Реквизит получателя <span style="color:var(--accent)">*</span></div>`;
+    html += `<div class="form-label">Реквизит получателя</div>`;
     html += `<input type="text" class="form-input" id="req-to-phone" placeholder="${phPlaceholder}" oninput="checkSubmitReady()">`;
-    html += `<div id="req-to-phone-hint" style="font-size:12px;color:var(--muted);margin-top:6px;">${phHint}</div>`;
     html += `</div>`;
     
     // 3. ФИО получателя
