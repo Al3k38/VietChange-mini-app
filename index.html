@@ -1551,7 +1551,6 @@ function checkSubmitReady() {
   // Подсветка поля суммы
   const inputFrom = document.getElementById('input-from');
   if (inputFrom) inputFrom.classList.toggle('required-empty', !hasAmount);
-
   // Город (для доставки и для онлайна с представителем)
   let cityOk = true;
   if (state.method === 'delivery') {
@@ -1569,7 +1568,6 @@ function checkSubmitReady() {
       if (!repCity.value) cityOk = false;
     }
   }
-
   // Сеть USDT обязательна только при ПОЛУЧЕНИИ клиентом USDT
   let usdtOk = true;
   if (state.to === 'USDT') {
@@ -1588,15 +1586,22 @@ function checkSubmitReady() {
       }
     }
   }
-
+  // Реквизит получателя обязателен для RUB_b / KZT_b / VND_b
+  let recipientOk = true;
+  if (['RUB_b','KZT_b','VND_b'].includes(state.to)) {
+    const phone = document.getElementById('req-to-phone');
+    if (phone) {
+      const filled = phone.value.trim();
+      phone.classList.toggle('required-empty', !filled);
+      if (!filled) recipientOk = false;
+    }
+  }
   // Согласие — подсветим если не отмечено
   const agreeRow = document.querySelector('label.checkbox-row input#agree-check')?.parentElement;
   if (agreeRow) agreeRow.style.outline = !agree ? '2px solid rgba(245,158,11,0.4)' : 'none';
-
   // Финальная активация кнопки
-  const ready = agree && hasAmount && cityOk && usdtOk;
+  const ready = agree && hasAmount && cityOk && usdtOk && recipientOk;
   document.getElementById('submit-btn').disabled = !ready;
-
   // Подсказка над кнопкой
   const hint = document.getElementById('submit-hint');
   if (hint) {
@@ -1605,6 +1610,7 @@ function checkSubmitReady() {
       if (!hasAmount) missing.push('сумма');
       if (!cityOk) missing.push('город');
       if (!usdtOk) missing.push('сеть USDT');
+      if (!recipientOk) missing.push('реквизит получателя');
       if (!agree) missing.push('согласие');
       hint.textContent = `⚠️ Заполните: ${missing.join(', ')}`;
       hint.classList.add('visible');
