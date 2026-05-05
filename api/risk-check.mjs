@@ -228,6 +228,7 @@ export async function assessRisk(userId, opts = {}) {
     summary,
     flags,
     ageDays,
+    userId,
     casChecked: cas.listed !== null,
     lolsChecked: lols.banned !== null,
   };
@@ -242,8 +243,13 @@ export function formatRiskBlock(risk) {
     `🛡 <b>Риск-проверка: ${risk.emoji} ${risk.summary}</b>`,
     ...risk.flags.map(f => `├ ${f}`),
   ];
-  // Последняя строка — переделываем ├ на └
-  lines[lines.length - 1] = lines[lines.length - 1].replace('├', '└');
+  // Добавляем ссылку на полную проверку через LolsBot
+  if (risk.userId) {
+    lines.push(`└ 🔍 <a href="https://t.me/LolsBot?start=${risk.userId}">Полная проверка через LolsBot</a>`);
+  } else {
+    // Если нет userId — последняя строка с флагом становится итоговой
+    lines[lines.length - 1] = lines[lines.length - 1].replace('├', '└');
+  }
   return lines.join('\n');
 }
 
