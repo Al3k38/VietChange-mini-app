@@ -198,11 +198,20 @@
 
 /* Подсветка обязательных незаполненных полей */
 .required-empty {
-  border-color: #f59e0b !important;
+  border: 1px solid #f59e0b !important;
+  border-radius: 10px !important;
   box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2) !important;
-  background: rgba(245, 158, 11, 0.05) !important;
-  border-radius: 12px !important;
-  outline: none !important;
+  background: rgba(245, 158, 11, 0.06) !important;
+}
+.amount-input.required-empty {
+  /* для большой суммы — собственный фон поверх с лёгким жёлтым */
+  background: rgba(245, 158, 11, 0.06) !important;
+}
+.form-input.required-empty,
+.form-select.required-empty {
+  /* для select/input в form-row — добавляем padding чтобы текст не налезал на рамку */
+  padding: 8px 10px !important;
+  margin-top: 4px !important;
 }
 .required-empty option { background: #1a1a22; }
 
