@@ -101,7 +101,7 @@ function buildGroupMessage(d, orderNum) {
     `<b>📋 Заявка №${orderNum}</b>`,
     `<b>Клиент:</b> ${clientLink}${usernamePart} (ID: <code>${userIdSafe || '—'}</code>)`,
     ``,
-    `<b>Обмен: ${fromFlag} ${d.fromLabel} → ${toFlag} ${d.toLabel}</b>`,
+    `<b>Обмен: ${d.fromLabel} → ${d.toLabel}</b>`,
     `<b>Продажа:</b> ${d.amtFrom} ${fromFlag} ${d.fromCode}`,
     `<b>Покупка:</b> ${d.amtTo} ${toFlag} ${d.toCode}`,
     `<b>Курс:</b> ${d.rate}`,
