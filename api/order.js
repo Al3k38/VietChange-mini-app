@@ -98,12 +98,13 @@ function buildGroupMessage(d, orderNum) {
     `${nowVN()}`,
     ``,
     `<b>📋 Заявка №${orderNum}</b>`,
-    `<b>Клиент:</b> ${clientLink}${usernamePart} (ID: <code>${userIdSafe || '—'}</code>)`,
+    `<b>Клиент:</b> ${clientLink}${usernamePart}`,
+    `<b>ID:</b> <code>${userIdSafe || '—'}</code>`,
     ``,
     `<b>Обмен: ${d.fromLabel} → ${d.toLabel}</b>`,
     `<b>Продажа:</b> <code>${d.amtFrom}</code> ${fromFlag} ${d.fromCode}`,
     `<b>Покупка:</b> <code>${d.amtTo}</code> ${toFlag} ${d.toCode}`,
-    `<code>Курс: ${d.rate}  </code>`,
+    `<pre>Курс: ${d.rate}     </pre>`,
     ``,
     `<b>Способ:</b> ${d.method}`,
     `<b>Дата:</b> ${d.date}`,
@@ -113,12 +114,12 @@ function buildGroupMessage(d, orderNum) {
   
   // Блок реквизитов — собираем массив и оборачиваем в <pre>
   const reqLines = [];
-  if (d.reqs && d.reqs.fromBank) reqLines.push(`Банк отправки: ${d.reqs.fromBank}`);
-  if (d.reqs && d.reqs.toName)   reqLines.push(`Получатель: ${d.reqs.toName}`);
-  if (d.reqs && d.reqs.toPhone)  reqLines.push(`Телефон/карта: ${d.reqs.toPhone}`);
-  if (d.reqs && d.reqs.toBank)   reqLines.push(`Банк получателя: ${d.reqs.toBank}`);
-  if (d.reqs && d.reqs.usdtNet)  reqLines.push(`Сеть USDT: ${d.reqs.usdtNet}`);
-  if (d.reqs && d.reqs.usdtAddr) reqLines.push(`Адрес: ${d.reqs.usdtAddr}`);
+  if (d.reqs && d.reqs.fromBank) reqLines.push(`Банк отправки: ${d.reqs.fromBank}     `);
+  if (d.reqs && d.reqs.toName)   reqLines.push(`Получатель: ${d.reqs.toName}     `);
+  if (d.reqs && d.reqs.toPhone)  reqLines.push(`Телефон/карта: ${d.reqs.toPhone}     `);
+  if (d.reqs && d.reqs.toBank)   reqLines.push(`Банк получателя: ${d.reqs.toBank}     `);
+  if (d.reqs && d.reqs.usdtNet)  reqLines.push(`Сеть USDT: ${d.reqs.usdtNet}     `);
+  if (d.reqs && d.reqs.usdtAddr) reqLines.push(`Адрес: ${d.reqs.usdtAddr}     `);
   
   if (reqLines.length > 0) {
     lines.push(``, `<pre>${reqLines.join('\n')}</pre>`);
