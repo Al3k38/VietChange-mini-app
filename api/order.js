@@ -250,7 +250,7 @@ export default async function handler(req, res) {
       // (нужно для сценария с реквизитами USDT в чат-боте)
       if (d.fromCode === 'USDT') {
         const amtFromNumber = String(d.amtFrom).replace(/[^\d.,]/g,'').replace(',','.');
-        await puzzleSetVariable(d.userId, 'usdt', amtFromNumber);
+        await puzzleSetVariable(d.userId, 'sum_3', amtFromNumber);
       }
       
       await tgSend(d.userId, buildClientMessage(d, orderNum));
