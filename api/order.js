@@ -43,7 +43,12 @@ function nowVN() {
 
 async function tgSend(chatId, text, threadId, replyToMessageId) {
   try {
-    const body = { chat_id: chatId, text, parse_mode: 'HTML' };
+    const body = { 
+      chat_id: chatId, 
+      text, 
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    };
     if (threadId) body.message_thread_id = parseInt(threadId);
     if (replyToMessageId) body.reply_to_message_id = parseInt(replyToMessageId);
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
