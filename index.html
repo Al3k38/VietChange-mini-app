@@ -1872,6 +1872,11 @@ document.getElementById('success-msg').textContent = msg;
 
 function closeApp() {
   try {
+    // 1. Открываем чат с ботом через Telegram (работает откуда угодно)
+    if (window.Telegram?.WebApp?.openTelegramLink) {
+      window.Telegram.WebApp.openTelegramLink('https://t.me/VietChangeBot');
+    }
+    // 2. Закрываем Mini App
     if (window.Telegram?.WebApp) {
       window.Telegram.WebApp.close();
     } else {
