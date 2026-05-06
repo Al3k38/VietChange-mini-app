@@ -246,9 +246,9 @@ export default async function handler(req, res) {
       await tgSend(GROUP_ID, riskBlock, THREAD_ID, orderMessageId);
     }
    if (d.userId) {
-      // Записываем сумму в переменную PuzzleBot "usdt" — ТОЛЬКО когда клиент отдаёт USDT
-      // (нужно для сценария с реквизитами USDT в чат-боте)
-      if (d.fromCode === 'USDT') {
+     // Записываем сумму в переменную PuzzleBot "sum_3" — для USDT и VND
+      // (нужно для сценария с реквизитами в чат-боте)
+      if (d.fromCode === 'USDT' || d.fromCode === 'VND') {
         const amtFromNumber = String(d.amtFrom).replace(/[^\d.,]/g,'').replace(',','.');
         await puzzleSetVariable(d.userId, 'sum_3', amtFromNumber);
       }
