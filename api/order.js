@@ -60,6 +60,23 @@ async function tgSend(chatId, text, threadId, replyToMessageId) {
   } catch(e) { console.error('tgSend error:', e); }
 }
 
+// Установка переменной PuzzleBot для конкретного клиента
+async function puzzleSetVariable(userId, variableName, value) {
+  if (!PUZZLEBOT_TOKEN || !userId || !variableName) return;
+  try {
+    const url = `https://api.puzzlebot.top/?token=${PUZZLEBOT_TOKEN}&method=variableChange&variable=${encodeURIComponent(variableName)}&expression=${encodeURIComponent(value)}&user_id=${userId}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.code !== 0) {
+      console.warn('PuzzleBot variableChange error:', data);
+    } else {
+      console.log(`PuzzleBot var "${variableName}" = "${value}" set for user ${userId}`);
+    }
+  } catch(e) { 
+    console.error('PuzzleBot setVariable error:', e); 
+  }
+}
+
 // Вызов команды PuzzleBot — клиент получит сообщение с кнопками
 async function puzzleSendCommand(userId, commandName) {
   if (!PUZZLEBOT_TOKEN || !userId) return;
@@ -228,7 +245,14 @@ export default async function handler(req, res) {
     if (GROUP_ID && riskBlock && orderMessageId) {
       await tgSend(GROUP_ID, riskBlock, THREAD_ID, orderMessageId);
     }
-    if (d.userId) {
+   if (d.userId) {
+      // Записываем сумму в переменную PuzzleBot "usdt" — ТОЛЬКО когда клиент отдаёт USDT
+      // (нужно для сценария с реквизитами USDT в чат-боте)
+      if (d.fromCode === 'USDT') {
+        const amtFromNumber = String(d.amtFrom).replace(/[^\d.,]/g,'').replace(',','.');
+        await puzzleSetVariable(d.userId, 'usdt', amtFromNumber);
+      }
+      
       await tgSend(d.userId, buildClientMessage(d, orderNum));
       // Через секунду вызываем команду PuzzleBot — клиент получит кнопки
       await new Promise(r => setTimeout(r, 800));
