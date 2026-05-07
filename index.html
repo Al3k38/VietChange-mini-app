@@ -1736,6 +1736,7 @@ async function submitOrder() {
   const username  = tgUser?.username ? `@${tgUser.username}` : (tgUser?.first_name || 'Клиент');
   const firstName = tgUser?.first_name || username;
   const userId    = tgUser?.id || null;
+  const photoUrl  = tgUser?.photo_url || '';
 
   // Курс с применённой тарифной сеткой — такой же как у клиента в плашке
   const baseRate = getRate(d.from, d.to);
@@ -1792,7 +1793,7 @@ async function submitOrder() {
 
   const payload = {
     initData: window.Telegram?.WebApp?.initData || '',
-    userId, username, firstName,
+    userId, username, firstName, photoUrl,
     fromLabel, toLabel, fromCode, toCode,
     amtFrom: formatNum(d.amtFrom),
     amtTo:   formatNum(d.amtTo),
