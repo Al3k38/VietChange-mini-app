@@ -215,17 +215,51 @@ export default async function handler(req, res) {
       }
     } catch(e) { /* без эквивалента — не критично */ }
 
-    // Риск-проверка клиента (CAS, LolsBot, эвристики)
+    // Запрос к Apps Script для получения firstSeen + истории имён клиента
+    let firstSeen = null;
+    let nameChanges = 0;
+    let usernameChanges = 0;
+    if (APPS_SCRIPT_URL && d.userId) {
+      try {
+        const visitRes = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'visit',
+            userId: d.userId,
+            username: d.username || '',
+            firstName: d.firstName || '',
+            datetime: nowVN(),
+            checkOnly: true,  // флаг чтобы не записывать дубликат визита
+          }),
+          redirect: 'follow',
+        });
+        if (visitRes.ok) {
+          const visitData = await visitRes.json();
+          firstSeen = visitData.firstSeen || null;
+          nameChanges = visitData.nameChanges || 0;
+          usernameChanges = visitData.usernameChanges || 0;
+        }
+      } catch(e) { 
+        console.error('Visit lookup failed:', e); 
+      }
+    }
+    
+    // Риск-проверка клиента (CAS, LolsBot, эвристики + история)
     let riskShort = '';
     let riskBlock = '';
     try {
       const risk = await assessRisk(d.userId, { 
         username: d.username, 
-        rubEquiv 
+        rubEquiv,
+        photoUrl: d.photoUrl || '',
+        firstSeen,
+        nameChanges,
+        usernameChanges,
       });
       riskShort = formatRiskShort(risk);
       riskBlock = formatRiskBlock(risk);
-      console.log('Risk check:', risk.summary, '| flags:', risk.flags.length);
+      console.log('Risk check:', risk.summary, '| flags:', risk.flags.length, '| nameChanges:', nameChanges, '| usernameChanges:', usernameChanges);
     } catch(e) {
       console.error('Risk check failed:', e);
     }
