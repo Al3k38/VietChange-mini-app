@@ -132,7 +132,14 @@ async function checkLolsBot(userId) {
  * @param {object} opts — { username, rubEquiv }
  */
 export async function assessRisk(userId, opts = {}) {
-  const { username, rubEquiv = 0 } = opts;
+  const { 
+    username, 
+    rubEquiv = 0, 
+    photoUrl = null,
+    firstSeen = null,
+    nameChanges = 0,
+    usernameChanges = 0,
+  } = opts;
   
   // Параллельные запросы к API
   const [cas, lols] = await Promise.all([
@@ -210,7 +217,66 @@ export async function assessRisk(userId, opts = {}) {
     flags.push(`Username: ✅ есть`);
   }
   
-  // 5. Крупная сумма + молодой аккаунт
+  // 5. Аватар
+  const hasPhoto = !!(photoUrl && typeof photoUrl === 'string' && photoUrl.length > 0);
+  if (!hasPhoto) {
+    flags.push(`Аватар: ⚠️ нет`);
+    if (level === 'LOW') level = 'MEDIUM';
+  } else {
+    flags.push(`Аватар: ✅ есть`);
+  }
+  
+  // 6. С нами с
+  if (firstSeen) {
+    try {
+      const firstDate = new Date(firstSeen);
+      if (!isNaN(firstDate.getTime())) {
+        const daysSince = Math.floor((Date.now() - firstDate.getTime()) / 86400000);
+        let withUsStr;
+        if (daysSince < 1) withUsStr = 'сегодня';
+        else if (daysSince < 7) withUsStr = `${daysSince} дн назад`;
+        else if (daysSince < 30) {
+          const w = Math.floor(daysSince / 7);
+          withUsStr = `${w} ${w === 1 ? 'неделю' : w < 5 ? 'недели' : 'недель'} назад`;
+        } else if (daysSince < 365) {
+          const m = Math.floor(daysSince / 30);
+          withUsStr = `${m} ${m === 1 ? 'месяц' : m < 5 ? 'месяца' : 'месяцев'} назад`;
+        } else {
+          const y = (daysSince / 365).toFixed(1);
+          withUsStr = `${y} года назад`;
+        }
+        // Свежий клиент = сигнал внимания
+        if (daysSince < 1) {
+          flags.push(`С нами с: ⚠️ ${withUsStr} (новый)`);
+          if (level === 'LOW') level = 'MEDIUM';
+        } else if (daysSince < 7) {
+          flags.push(`С нами с: 🟡 ${withUsStr}`);
+        } else {
+          flags.push(`С нами с: ✅ ${withUsStr}`);
+        }
+      }
+    } catch(e) { /* пропускаем */ }
+  }
+  
+  // 7. Смена имени
+  if (nameChanges >= 3) {
+    flags.push(`🚩 Смена имени: ${nameChanges} раз`);
+    level = 'HIGH';
+  } else if (nameChanges >= 1) {
+    flags.push(`⚠️ Смена имени: ${nameChanges} ${nameChanges === 1 ? 'раз' : 'раза'}`);
+    if (level === 'LOW') level = 'MEDIUM';
+  }
+  
+  // 8. Смена username
+  if (usernameChanges >= 3) {
+    flags.push(`🚩 Смена @username: ${usernameChanges} раз`);
+    level = 'HIGH';
+  } else if (usernameChanges >= 1) {
+    flags.push(`⚠️ Смена @username: ${usernameChanges} ${usernameChanges === 1 ? 'раз' : 'раза'}`);
+    if (level === 'LOW') level = 'MEDIUM';
+  }
+  
+  // 9. Крупная сумма + молодой аккаунт
   if (ageDays !== null && rubEquiv >= 100000 && ageDays < 30) {
     flags.push(`💰 Крупная сумма + новый аккаунт`);
     level = 'HIGH';
@@ -243,11 +309,11 @@ export function formatRiskBlock(risk) {
     `🛡 <b>Риск-проверка: ${risk.emoji} ${risk.summary}</b>`,
     ...risk.flags.map(f => `├ ${f}`),
   ];
-  // Добавляем ссылку на полную проверку через LolsBot
+  // Добавляем ссылку на LolsBot для полной проверки
   if (risk.userId) {
-    lines.push(`└ 🔍 <a href="https://t.me/LolsBot?start=${risk.userId}">Полная проверка через LolsBot</a>`);
+    lines.push(`└ 🔍 <a href="https://t.me/LolsBot?start=${risk.userId}">Полная проверка LolsBot</a>`);
   } else {
-    // Если нет userId — последняя строка с флагом становится итоговой
+    // Если нет userId — просто меняем последнее ├ на └
     lines[lines.length - 1] = lines[lines.length - 1].replace('├', '└');
   }
   return lines.join('\n');
