@@ -9,6 +9,7 @@ const GROUP_ID         = process.env.GROUP_ID;
 const GENERAL_THREAD_ID = process.env.GENERAL_THREAD_ID || null; // топик "General"
 const APPS_SCRIPT_URL  = process.env.APPS_SCRIPT_URL;
 const PUZZLEBOT_TOKEN  = process.env.PUZZLEBOT_TOKEN;
+const RISK_CHECK_SECRET = process.env.RISK_CHECK_SECRET;
 
 function nowVN() {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString()
@@ -37,10 +38,9 @@ export default async function handler(req, res) {
   // Только POST + защита по токену
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   
-  // Защита — простой токен в URL (?token=XXX)
-  // PuzzleBot вызывает: https://viet-change-mini-app.vercel.app/api/risk-on-start?token=PUZZLEBOT_TOKEN
+ // Защита — отдельный секрет (НЕ PUZZLEBOT_TOKEN!)
   const token = req.query.token;
-  if (!token || token !== PUZZLEBOT_TOKEN) {
+  if (!RISK_CHECK_SECRET || !token || token !== RISK_CHECK_SECRET) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   
