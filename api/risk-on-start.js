@@ -47,7 +47,7 @@ export default async function handler(req, res) {
   
   try {
     const d = req.body;
-    console.log('[risk-on-start] body received:', JSON.stringify(d));
+    console.warn('[risk-on-start] body received:', JSON.stringify(d));
     if (!d) return res.status(400).json({ error: 'Invalid data: empty body' });
     
     // Поддержка двух форматов:
