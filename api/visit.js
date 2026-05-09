@@ -6,6 +6,7 @@ const BOT_TOKEN          = process.env.BOT_TOKEN;
 const GROUP_ID           = process.env.GROUP_ID;
 const GENERAL_THREAD_ID  = process.env.GENERAL_THREAD_ID;
 const APPS_SCRIPT_URL    = process.env.APPS_SCRIPT_URL;
+const RISK_CHECK_SECRET  = process.env.RISK_CHECK_SECRET;
 
 function verifyTelegramInitData(initData, botToken) {
   if (!initData) return null;
@@ -179,6 +180,25 @@ export default async function handler(req, res) {
     if (GROUP_ID) {
       const r = await tgSend(GROUP_ID, msg, null);
       console.log('TG SEND result:', JSON.stringify(r));
+    }
+
+    // Запуск риск-проверки в фоне (fire-and-forget) — не блокирует ответ Mini App
+    if (RISK_CHECK_SECRET) {
+      const proto = req.headers['x-forwarded-proto'] || 'https';
+      const host = req.headers.host;
+      const riskUrl = `${proto}://${host}/api/risk-on-start?token=${RISK_CHECK_SECRET}`;
+      fetch(riskUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          username: username.replace(/^@/, ''),
+          firstName,
+          photoUrl: '',
+          isPremium: verifiedUser.is_premium ? '1' : '0',
+          event: 'mini_app',
+        }),
+      }).catch(e => console.warn('[visit] risk-on-start call failed:', e.message));
     }
 
     return res.status(200).json({ ok: true });
