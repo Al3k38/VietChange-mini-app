@@ -6,7 +6,8 @@ import { assessRisk, formatRiskBlock } from './risk-check.mjs';
 
 const BOT_TOKEN        = process.env.BOT_TOKEN;
 const GROUP_ID         = process.env.GROUP_ID;
-const GENERAL_THREAD_ID = process.env.GENERAL_THREAD_ID || null; // топик "General"
+const GENERAL_THREAD_ID = process.env.GENERAL_THREAD_ID || null;
+const RISK_THREAD_ID   = process.env.RISK_THREAD_ID;
 const APPS_SCRIPT_URL  = process.env.APPS_SCRIPT_URL;
 const PUZZLEBOT_TOKEN  = process.env.PUZZLEBOT_TOKEN;
 const RISK_CHECK_SECRET = process.env.RISK_CHECK_SECRET;
@@ -181,10 +182,9 @@ export default async function handler(req, res) {
     const riskBlock = formatRiskBlock(risk);
     const fullMsg = msg + '\n' + riskBlock;
     
-    // Отправляем в General-топик группы
-    const threadIdToUse = GENERAL_THREAD_ID && GENERAL_THREAD_ID !== '1' ? GENERAL_THREAD_ID : null;
-    if (GROUP_ID) {
-      await tgSend(GROUP_ID, fullMsg, threadIdToUse);
+    // Отправляем в топик Risk Check
+    if (GROUP_ID && RISK_THREAD_ID) {
+      await tgSend(GROUP_ID, fullMsg, RISK_THREAD_ID);
     }
     
     return res.status(200).json({ ok: true, isNew: true, risk: risk.summary });
