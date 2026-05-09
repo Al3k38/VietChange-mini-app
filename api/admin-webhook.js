@@ -39,6 +39,28 @@ async function tgSend(chatId, text, threadId, replyToMessageId) {
   } catch(e) { console.error('tgSend error:', e); }
 }
 
+// Поиск клиента по userId в листе "Визиты"
+async function findClientByUserId(userId) {
+  if (!APPS_SCRIPT_URL || !userId) return null;
+  try {
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'lookup_userid',
+        userId: String(userId),
+      }),
+      redirect: 'follow',
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.found ? data : null;
+  } catch(e) { 
+    console.warn('UserId lookup failed:', e.message);
+    return null;
+  }
+}
+
 // Поиск клиента по username в листе "Визиты"
 async function findClientByUsername(username) {
   if (!APPS_SCRIPT_URL || !username) return null;
@@ -122,6 +144,12 @@ async function handleCheckCommand(message, args) {
   
   if (/^\d{5,}$/.test(query)) {
     targetUserId = query;
+    // Пытаемся найти имя/username в нашей БД по этому ID
+    const found = await findClientByUserId(targetUserId);
+    if (found) {
+      targetUsername = found.username || '';
+      targetFirstName = found.firstName || 'Клиент';
+    }
   } else {
     const found = await findClientByUsername(query);
     if (found) {
