@@ -102,16 +102,42 @@ export default async function handler(req, res) {
           redirect: 'follow',
         });
         if (visitRes.ok) {
+          if (visitRes.ok) {
           const visitData = await visitRes.json();
           firstSeen = visitData.firstSeen || null;
           nameChanges = visitData.nameChanges || 0;
           usernameChanges = visitData.usernameChanges || 0;
-          // Если firstSeen был — клиент уже был у нас
           isNewClient = !firstSeen;
         }
       } catch(e) { 
-        console.error('Visit lookup failed:', e); 
-        // Если не удалось проверить — считаем новым (лучше лишнее уведомление)
+        console.warn('[risk-on-start] Visit lookup failed:', e.message || e); 
+      }
+      
+      // Если клиент НОВЫЙ — записываем его в "Визиты"
+      if (isNewClient && APPS_SCRIPT_URL) {
+        try {
+          await fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'visit',
+              userId,
+              username: username.replace(/^@/, ''),
+              firstName,
+              datetime: nowVN(),
+              // checkOnly НЕ передаём → Apps Script запишет
+              accountYear: null,
+              lang: '',
+              isPremium: '',
+              platform: 'start',
+              tgVersion: '',
+            }),
+            redirect: 'follow',
+          });
+          console.warn(`[risk-on-start] Saved new client to "Визиты": ${userId}`);
+        } catch(e) {
+          console.warn('[risk-on-start] Save to Визиты failed:', e.message || e);
+        }
       }
     }
     
