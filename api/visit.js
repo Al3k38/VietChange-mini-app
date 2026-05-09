@@ -182,23 +182,32 @@ export default async function handler(req, res) {
       console.log('TG SEND result:', JSON.stringify(r));
     }
 
-    // Запуск риск-проверки в фоне (fire-and-forget) — не блокирует ответ Mini App
+    // Запуск риск-проверки — с await чтобы Vercel не убил процесс до отправки
     if (RISK_CHECK_SECRET) {
       const proto = req.headers['x-forwarded-proto'] || 'https';
       const host = req.headers.host;
       const riskUrl = `${proto}://${host}/api/risk-on-start?token=${RISK_CHECK_SECRET}`;
-      fetch(riskUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          username: username.replace(/^@/, ''),
-          firstName,
-          photoUrl: '',
-          isPremium: verifiedUser.is_premium ? '1' : '0',
-          event: 'mini_app',
-        }),
-      }).catch(e => console.warn('[visit] risk-on-start call failed:', e.message));
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const r = await fetch(riskUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            username: username.replace(/^@/, ''),
+            firstName,
+            photoUrl: '',
+            isPremium: verifiedUser.is_premium ? '1' : '0',
+            event: 'mini_app',
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        console.log('[visit] risk-on-start status:', r.status);
+      } catch(e) {
+        console.warn('[visit] risk-on-start failed:', e.message);
+      }
     }
 
     return res.status(200).json({ ok: true });
