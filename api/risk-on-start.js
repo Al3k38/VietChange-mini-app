@@ -160,8 +160,8 @@ export default async function handler(req, res) {
       }
     }
     
-    // ─── ОБРАБОТКА СОБЫТИЯ /menu ─────────────────────────────────
-    if (event === 'menu') {
+    // ─── ОБРАБОТКА СОБЫТИЯ /menu или mini_app ───────────────────
+    if (event === 'menu' || event === 'mini_app') {
       // Антиспам: проверяем было ли уведомление за последние 7 дней
       const recentAlert = await checkRecentAlert(userId);
       if (recentAlert) {
@@ -193,7 +193,7 @@ export default async function handler(req, res) {
       const usernamePart = username ? ` · ${username}` : '';
       
       const msg = [
-        `🚨 <b>Подозрительная активность (/menu)</b>`,
+        `🚨 <b>Подозрительная активность (${event === 'menu' ? '/menu' : 'Mini App'})</b>`,
         `📅 ${nowVN()}`,
         ``,
         `<b>Имя:</b> ${clientLink}${usernamePart}`,
@@ -208,8 +208,9 @@ export default async function handler(req, res) {
         await tgSend(GROUP_ID, fullMsg, RISK_THREAD_ID);
       }
       
-      // Сохраняем уведомление в Risk Alerts
-      await saveAlert(userId, username, firstName, risk.summary, '/menu', risk.flags.join(' | '));
+     // Сохраняем уведомление в Risk Alerts
+      const eventLabel = event === 'menu' ? '/menu' : 'mini_app';
+      await saveAlert(userId, username, firstName, risk.summary, eventLabel, risk.flags.join(' | '));
       
       return res.status(200).json({ ok: true, event: 'menu', risk: risk.summary, sent: true });
     }
