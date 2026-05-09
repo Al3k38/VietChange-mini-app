@@ -1445,9 +1445,10 @@ function validateTimeSlot() {
   const curMin = vn.getHours() * 60 + vn.getMinutes();
   const startMin = 8 * 60; // начало слота 08:00
   const slotStartMin = startMin + state.timeSlot * 30; // начало выбранного слота
+  const slotEndMin = slotStartMin + 30; // конец слота (через 30 минут)
   
-  // Слот в прошлом? (его время начала уже прошло)
-  if (slotStartMin < curMin) {
+  // Слот в прошлом? (КОНЕЦ слота уже прошёл, не начало)
+  if (slotEndMin <= curMin) {
     const wrap = display.parentElement;
     warn = document.createElement('div');
     warn.id = 'time-warn';
