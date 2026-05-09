@@ -1758,8 +1758,8 @@ async function submitOrder() {
   if (state.date === 'today') {
     const vn = getVNTime();
     const curMin = vn.getHours() * 60 + vn.getMinutes();
-    const slotStartMin = 8 * 60 + state.timeSlot * 30;
-    if (slotStartMin < curMin) {
+    const slotEndMin = 8 * 60 + state.timeSlot * 30 + 30;
+    if (slotEndMin <= curMin) {
       alert('⚠️ Выбранное время уже прошло. Выберите более позднее или дату «Завтра».');
       return;
     }
