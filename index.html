@@ -1348,6 +1348,7 @@ function selectDate(el, val) {
   el.classList.add('active');
   state.date = val;
   document.getElementById('custom-date-wrap').classList.toggle('hidden', val !== 'custom');
+  validateTimeSlot();
 }
 
 // ─── ПОЛУЧЕНИЕ ГЕОПОЗИЦИИ ЧЕРЕЗ TELEGRAM ─────────────────────
@@ -1425,6 +1426,38 @@ function updateTimeSlider() {
   const idx = parseInt(document.getElementById('time-slider').value);
   state.timeSlot = idx;
   document.getElementById('time-display').textContent = TIME_SLOTS[idx] || '08:00–08:30';
+  validateTimeSlot();
+}
+
+// Валидация выбранного слота относительно текущего времени (только для "Сегодня")
+function validateTimeSlot() {
+  const display = document.getElementById('time-display');
+  if (!display) return;
+  
+  // Удаляем старое предупреждение
+  let warn = document.getElementById('time-warn');
+  if (warn) warn.remove();
+  
+  // Проверяем только если выбрано "Сегодня"
+  if (state.date !== 'today') return;
+  
+  const vn = getVNTime();
+  const curMin = vn.getHours() * 60 + vn.getMinutes();
+  const startMin = 8 * 60; // начало слота 08:00
+  const slotStartMin = startMin + state.timeSlot * 30; // начало выбранного слота
+  
+  // Слот в прошлом? (его время начала уже прошло)
+  if (slotStartMin < curMin) {
+    const wrap = display.parentElement;
+    warn = document.createElement('div');
+    warn.id = 'time-warn';
+    warn.style.cssText = 'color:#f59e0b;font-size:12px;text-align:center;margin-top:6px';
+    warn.textContent = '⚠️ Это время уже прошло. Выберите более позднее или дату «Завтра»';
+    wrap.appendChild(warn);
+    display.style.color = '#f59e0b';
+  } else {
+    display.style.color = '';
+  }
 }
 
 function setNearestTime() {
@@ -1443,8 +1476,8 @@ function setNearestTime() {
     return;
   }
 
-  // Если позже 21:30 — переключаем на завтра, первый слот
-  if (curMin > endMin) {
+  // Если позже 22:00 — переключаем на завтра, первый слот
+  if (curMin > 22 * 60) {
     document.getElementById('time-slider').value = 0;
     document.querySelectorAll('.date-tab').forEach((t,i) => t.classList.toggle('active', i===1));
     state.date = 'tomorrow';
@@ -1720,6 +1753,16 @@ function goToConfirm() {
 
 // ─── SUBMIT ───────────────────────────────────────────────────
 async function submitOrder() {
+  // Валидация времени для "Сегодня"
+  if (state.date === 'today') {
+    const vn = getVNTime();
+    const curMin = vn.getHours() * 60 + vn.getMinutes();
+    const slotStartMin = 8 * 60 + state.timeSlot * 30;
+    if (slotStartMin < curMin) {
+      alert('⚠️ Выбранное время уже прошло. Выберите более позднее или дату «Завтра».');
+      return;
+    }
+  }
   const d = buildConfirmData();
   const fromLabel = LABELS[d.from] || d.from;
   const toLabel = LABELS[d.to] || d.to;
