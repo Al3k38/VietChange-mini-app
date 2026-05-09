@@ -104,7 +104,9 @@ export default async function handler(req, res) {
     if (!d) return res.status(400).json({ error: 'Invalid data: empty body' });
     
     // Извлекаем тип события (start или menu)
+    // Извлекаем тип события (start или menu)
     const event = String(d.event || 'start').toLowerCase();
+    console.warn(`[risk-on-start] event=${event} userId=${d.userId || (d.user && d.user.id) || 'unknown'}`);
     
     // Извлекаем данные пользователя (поддержка двух форматов)
     let userId, username, firstName, photoUrl = '';
