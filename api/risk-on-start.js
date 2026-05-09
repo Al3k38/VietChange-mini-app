@@ -1,6 +1,6 @@
 // api/risk-on-start.js
-// Vercel Serverless Function — вызывается из PuzzleBot при /start
-// Проверяет нового клиента и отправляет риск-блок в группу менеджеров
+// Vercel Serverless Function — вызывается из PuzzleBot при /start или /menu
+// Проверяет клиента и отправляет риск-блок в топик Risk Check
 
 import { assessRisk, formatRiskBlock } from './risk-check.mjs';
 
@@ -35,14 +35,67 @@ async function tgSend(chatId, text, threadId) {
   } catch(e) { console.error('tgSend error:', e); }
 }
 
+// Проверка — было ли уведомление за последние 7 дней
+async function checkRecentAlert(userId) {
+  if (!APPS_SCRIPT_URL || !userId) return false;
+  try {
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'check_alert', userId: String(userId) }),
+      redirect: 'follow',
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.recentAlert === true;
+  } catch(e) { 
+    console.warn('[risk-on-start] check_alert failed:', e.message);
+    return false;
+  }
+}
+
+// Сохранение нового уведомления о риске
+async function saveAlert(userId, username, firstName, riskLevel, event, signals) {
+  if (!APPS_SCRIPT_URL || !userId) return;
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'save_alert',
+        datetime: nowVN(),
+        userId: String(userId),
+        username: username || '',
+        firstName: firstName || '',
+        riskLevel,
+        event,
+        signals: signals || '',
+      }),
+      redirect: 'follow',
+    });
+  } catch(e) { 
+    console.warn('[risk-on-start] save_alert failed:', e.message);
+  }
+}
+
+// Проверяет — есть ли в риске КРИТИЧНЫЕ сигналы (только для /menu)
+function hasCriticalSignals(risk) {
+  for (const flag of risk.flags) {
+    if (flag.includes('CAS:') && flag.includes('🚩')) return true;
+    if (flag.includes('LolsBot:') && flag.includes('🚩')) return true;
+    if (flag.includes('Возраст:') && flag.includes('⚠️')) return true;
+    if (flag.includes('Смена имени:') && flag.includes('🚩')) return true;
+    if (flag.includes('Смена @username:') && flag.includes('🚩')) return true;
+  }
+  return false;
+}
+
 export default async function handler(req, res) {
-  // Только POST + защита по токену
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   
-  // Защита — отдельный секрет (НЕ PUZZLEBOT_TOKEN!)
   const token = req.query.token;
   if (!RISK_CHECK_SECRET || !token || token !== RISK_CHECK_SECRET) {
-    console.log('[risk-on-start] FORBIDDEN — token mismatch or missing');
+    console.warn('[risk-on-start] FORBIDDEN — token mismatch or missing');
     return res.status(403).json({ error: 'Forbidden' });
   }
   
@@ -50,38 +103,31 @@ export default async function handler(req, res) {
     const d = req.body;
     if (!d) return res.status(400).json({ error: 'Invalid data: empty body' });
     
-    // Поддержка двух форматов:
-    // 1. Прямой POST: { userId, username, firstName }
-    // 2. PuzzleBot subscription: { user: {id, username, first_name}, command: {name}, ... }
-    let userId, username, firstName;
+    // Извлекаем тип события (start или menu)
+    const event = String(d.event || 'start').toLowerCase();
+    
+    // Извлекаем данные пользователя (поддержка двух форматов)
+    let userId, username, firstName, photoUrl = '';
     if (d.user && d.user.id) {
-      // Формат PuzzleBot subscriptions
       userId = String(d.user.id);
       username = d.user.username || '';
       firstName = d.user.first_name || 'Клиент';
-      // Игнорируем события от ботов
-      if (d.user.is_bot === true) {
-        return res.status(200).json({ ok: true, ignored: 'bot' });
-      }
-      // Игнорируем команды НЕ от частного чата
+      if (d.user.is_bot === true) return res.status(200).json({ ok: true, ignored: 'bot' });
       if (d.chat && d.chat.type && d.chat.type !== 'private') {
         return res.status(200).json({ ok: true, ignored: 'not private chat' });
       }
     } else if (d.userId) {
-      // Прямой POST формат
       userId = String(d.userId);
       username = d.username || '';
       firstName = d.firstName || d.name || 'Клиент';
+      photoUrl = d.photoUrl || '';
     } else {
       return res.status(400).json({ error: 'Invalid data: missing user info' });
     }
     
-    // Нормализация username (добавляем @ если нет)
-    if (username && !username.startsWith('@')) {
-      username = '@' + username;
-    }
+    if (username && !username.startsWith('@')) username = '@' + username;
     
-    // Проверяем есть ли клиент уже в БД через Apps Script
+    // Проверка истории клиента в "Визиты"
     let isNewClient = true;
     let firstSeen = null;
     let nameChanges = 0;
@@ -103,7 +149,6 @@ export default async function handler(req, res) {
           redirect: 'follow',
         });
         if (visitRes.ok) {
-          if (visitRes.ok) {
           const visitData = await visitRes.json();
           firstSeen = visitData.firstSeen || null;
           nameChanges = visitData.nameChanges || 0;
@@ -111,11 +156,89 @@ export default async function handler(req, res) {
           isNewClient = !firstSeen;
         }
       } catch(e) { 
-        console.warn('[risk-on-start] Visit lookup failed:', e.message || e); 
+        console.warn('[risk-on-start] Visit lookup failed:', e.message);
+      }
+    }
+    
+    // ─── ОБРАБОТКА СОБЫТИЯ /menu ─────────────────────────────────
+    if (event === 'menu') {
+      // Антиспам: проверяем было ли уведомление за последние 7 дней
+      const recentAlert = await checkRecentAlert(userId);
+      if (recentAlert) {
+        console.warn(`[/menu] Skip alert for ${userId} — recent alert within 7 days`);
+        return res.status(200).json({ ok: true, event: 'menu', skipped: 'recent_alert' });
       }
       
-      // Если клиент НОВЫЙ — записываем его в "Визиты"
-      if (isNewClient && APPS_SCRIPT_URL) {
+      // Запускаем риск-проверку
+      const risk = await assessRisk(userId, {
+        username,
+        rubEquiv: 0,
+        photoUrl,
+        firstSeen,
+        nameChanges,
+        usernameChanges,
+      });
+      
+      // Проверяем наличие КРИТИЧНЫХ сигналов
+      if (!hasCriticalSignals(risk)) {
+        console.warn(`[/menu] No critical signals for ${userId} — no notification`);
+        return res.status(200).json({ ok: true, event: 'menu', sent: false });
+      }
+      
+      console.warn(`[/menu] CRITICAL ${userId} | ${risk.summary}`);
+      
+      // Формируем сообщение
+      const userIdSafe = String(userId);
+      const clientLink = `<a href="tg://user?id=${userIdSafe}">${firstName}</a>`;
+      const usernamePart = username ? ` · ${username}` : '';
+      
+      const msg = [
+        `🚨 <b>Подозрительная активность (/menu)</b>`,
+        `📅 ${nowVN()}`,
+        ``,
+        `<b>Имя:</b> ${clientLink}${usernamePart}`,
+        `<b>ID:</b> <code>${userIdSafe}</code>`,
+      ].join('\n');
+      
+      const riskBlock = formatRiskBlock(risk);
+      const fullMsg = msg + '\n' + riskBlock;
+      
+      // Отправляем в топик Risk Check
+      if (GROUP_ID && RISK_THREAD_ID) {
+        await tgSend(GROUP_ID, fullMsg, RISK_THREAD_ID);
+      }
+      
+      // Сохраняем уведомление в Risk Alerts
+      await saveAlert(userId, username, firstName, risk.summary, '/menu', risk.flags.join(' | '));
+      
+      return res.status(200).json({ ok: true, event: 'menu', risk: risk.summary, sent: true });
+    }
+    
+    // ─── ОБРАБОТКА СОБЫТИЯ /start (старая логика) ───────────────
+    
+    // Если клиент УЖЕ был — тишина
+    if (!isNewClient) {
+      console.warn(`[/start] Existing client ${userId} — no notification`);
+      return res.status(200).json({ ok: true, event: 'start', isNew: false });
+    }
+    
+    // Запускаем риск-проверку
+    const risk = await assessRisk(userId, {
+      username,
+      rubEquiv: 0,
+      photoUrl,
+      firstSeen,
+      nameChanges,
+      usernameChanges,
+    });
+    
+    console.warn(`[/start] NEW client ${userId} | ${risk.summary}`);
+    
+    // Если риск НИЗКИЙ — тишина
+    if (risk.level === 'LOW') {
+      console.warn(`[/start] Low risk — no notification for ${userId}`);
+      // Записываем нового клиента в "Визиты" даже при низком риске
+      if (APPS_SCRIPT_URL) {
         try {
           await fetch(APPS_SCRIPT_URL, {
             method: 'POST',
@@ -126,44 +249,13 @@ export default async function handler(req, res) {
               username: username.replace(/^@/, ''),
               firstName,
               datetime: nowVN(),
-              // checkOnly НЕ передаём → Apps Script запишет
-              accountYear: null,
-              lang: '',
-              isPremium: '',
               platform: 'start',
-              tgVersion: '',
             }),
             redirect: 'follow',
           });
-          console.warn(`[risk-on-start] Saved new client to "Визиты": ${userId}`);
-        } catch(e) {
-          console.warn('[risk-on-start] Save to Визиты failed:', e.message || e);
-        }
+        } catch(e) {}
       }
-    }
-    
-    // Если клиент УЖЕ был — не отправляем уведомление
-    if (!isNewClient) {
-      console.log(`[/start] Existing client ${userId} — no notification`);
-      return res.status(200).json({ ok: true, isNew: false });
-    }
-    
-    // Запускаем риск-проверку
-    const risk = await assessRisk(userId, {
-      username,
-      rubEquiv: 0,
-      photoUrl: '',  // photo_url не передаётся через PuzzleBot, проверим без него
-      firstSeen,
-      nameChanges,
-      usernameChanges,
-    });
-    
-    console.log(`[/start] NEW client ${userId} | ${risk.summary}`);
-    
-    // Если риск НИЗКИЙ — не отправляем уведомление (нормальный клиент)
-    if (risk.level === 'LOW') {
-      console.log(`[/start] Low risk — no notification for ${userId}`);
-      return res.status(200).json({ ok: true, isNew: true, risk: risk.summary, sent: false });
+      return res.status(200).json({ ok: true, event: 'start', isNew: true, risk: risk.summary, sent: false });
     }
     
     // Формируем сообщение в группу
@@ -187,7 +279,31 @@ export default async function handler(req, res) {
       await tgSend(GROUP_ID, fullMsg, RISK_THREAD_ID);
     }
     
-    return res.status(200).json({ ok: true, isNew: true, risk: risk.summary });
+    // Сохраняем уведомление в Risk Alerts
+    await saveAlert(userId, username, firstName, risk.summary, '/start', risk.flags.join(' | '));
+    
+    // Записываем нового клиента в "Визиты" (без checkOnly)
+    if (APPS_SCRIPT_URL) {
+      try {
+        await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'visit',
+            userId,
+            username: username.replace(/^@/, ''),
+            firstName,
+            datetime: nowVN(),
+            platform: 'start',
+          }),
+          redirect: 'follow',
+        });
+      } catch(e) {
+        console.warn('[risk-on-start] Save to Визиты failed:', e.message);
+      }
+    }
+    
+    return res.status(200).json({ ok: true, event: 'start', isNew: true, risk: risk.summary, sent: true });
     
   } catch(e) {
     console.error('Handler error:', e);
