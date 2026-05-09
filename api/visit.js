@@ -74,6 +74,46 @@ async function tgSend(chatId, text, threadId) {
   }
 }
 
+// Проверка — было ли уведомление "Клиент в Mini App" за последний час
+async function checkVisitAlert(userId) {
+  if (!APPS_SCRIPT_URL || !userId) return false;
+  try {
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'check_visit_alert', userId: String(userId) }),
+      redirect: 'follow',
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.recentAlert === true;
+  } catch(e) { 
+    console.warn('[visit] check_visit_alert failed:', e.message);
+    return false;
+  }
+}
+
+// Сохранение нового "Клиент в Mini App" уведомления
+async function saveVisitAlert(userId, username, firstName) {
+  if (!APPS_SCRIPT_URL || !userId) return;
+  try {
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'save_visit_alert',
+        datetime: nowVN(),
+        userId: String(userId),
+        username: username || '',
+        firstName: firstName || '',
+      }),
+      redirect: 'follow',
+    });
+  } catch(e) { 
+    console.warn('[visit] save_visit_alert failed:', e.message);
+  }
+}
+
 async function logToSheet(data) {
   if (!APPS_SCRIPT_URL) return null;
   try {
@@ -177,9 +217,15 @@ export default async function handler(req, res) {
       `<b>Платформа:</b> ${platform || '—'} · Telegram ${tgVersion || '—'}`,
     ].filter(Boolean).join('\n');
 
-    if (GROUP_ID) {
+    // Антиспам: проверяем было ли "Клиент в Mini App" за последний час
+    const recentVisitAlert = await checkVisitAlert(userId);
+    if (GROUP_ID && !recentVisitAlert) {
       const r = await tgSend(GROUP_ID, msg, null);
       console.log('TG SEND result:', JSON.stringify(r));
+      // Записываем что отправили, чтобы не спамить в течение часа
+      await saveVisitAlert(userId, username, firstName);
+    } else if (recentVisitAlert) {
+      console.log(`[visit] Skip alert for ${userId} — recent visit within 1 hour`);
     }
 
     // Запуск риск-проверки — с await чтобы Vercel не убил процесс до отправки
