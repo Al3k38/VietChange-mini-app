@@ -249,7 +249,7 @@ export async function assessRisk(userId, opts = {}) {
         if (daysSince < 1) {
           flags.push(`С нами с: ⚠️ ${withUsStr} (новый)`);
           if (level === 'LOW') level = 'MEDIUM';
-        } else if (daysSince < 7) {
+        } else if (daysSince < 20) {
           flags.push(`С нами с: 🟡 ${withUsStr}`);
         } else {
           flags.push(`С нами с: ✅ ${withUsStr}`);
@@ -277,10 +277,10 @@ export async function assessRisk(userId, opts = {}) {
   }
   
   // 9. Крупная сумма + молодой аккаунт
-  if (ageDays !== null && rubEquiv >= 100000 && ageDays < 30) {
+  if (ageDays !== null && rubEquiv >= 70000 && ageDays < 30) {
     flags.push(`💰 Крупная сумма + новый аккаунт`);
     level = 'HIGH';
-  } else if (ageDays !== null && rubEquiv >= 200000 && ageDays < 90) {
+  } else if (ageDays !== null && rubEquiv >= 70000 && ageDays < 90) {
     flags.push(`💰 Крупная сумма + молодой аккаунт`);
     if (level === 'LOW') level = 'MEDIUM';
   }
