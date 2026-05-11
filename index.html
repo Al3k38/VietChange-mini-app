@@ -999,6 +999,21 @@ try {
   }
 } catch(e) { console.warn('Metrika setUserID failed:', e); }
 
+// Автопрокрутка к полю ввода когда открывается клавиатура
+document.addEventListener('focusin', (e) => {
+  const el = e.target;
+  if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA' && el.tagName !== 'SELECT')) return;
+  // Задержка чтобы клавиатура успела открыться
+  setTimeout(() => {
+    try {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch(e) {
+      // Fallback для старых браузеров
+      el.scrollIntoView(true);
+    }
+  }, 300);
+});  
+
 // ─── ЛОГИРОВАНИЕ ВИЗИТА В MINI APP ─────────────────────────
 async function logVisit() {
   try {
