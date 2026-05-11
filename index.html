@@ -1006,9 +1006,22 @@ document.addEventListener('focusin', (e) => {
   // Задержка чтобы клавиатура успела открыться
   setTimeout(() => {
     try {
+      // Сначала плавная прокрутка к полю
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Через 350мс дополнительно поднимаем чтобы поле не закрывалось кнопкой "Перейти к подтверждению"
+      setTimeout(() => {
+        const rect = el.getBoundingClientRect();
+        const viewportH = window.innerHeight;
+        const safeBottom = 180; // высота кнопки + клавиатура запас (px)
+        const elBottom = rect.bottom;
+        // Если низ поля попадает в зону кнопки — поднимаем ещё
+        if (elBottom > viewportH - safeBottom) {
+          const offset = elBottom - (viewportH - safeBottom);
+          window.scrollBy({ top: offset + 20, behavior: 'smooth' });
+        }
+      }, 350);
     } catch(e) {
-      // Fallback для старых браузеров
+      // Fallback
       el.scrollIntoView(true);
     }
   }, 300);
