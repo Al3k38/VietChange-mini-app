@@ -128,7 +128,7 @@ function buildGroupMessage(d, orderNum) {
     `<b>Обмен: ${d.fromLabel} → ${d.toLabel}</b>`,
     `<b>Продажа:</b> <code>${d.amtFrom}</code> ${fromFlag} ${d.fromCode}`,
     `<b>Покупка:</b> <code>${d.amtTo}</code> ${toFlag} ${d.toCode}`,
-    `<pre>Курс: ${d.rate}  </pre>`,
+    `<b>Курс:</b> <code>${d.rate}</code>`,
     ``,
     `<b>Способ:</b> ${d.method}`,
     `<b>Дата:</b> ${d.date}`,
@@ -136,17 +136,17 @@ function buildGroupMessage(d, orderNum) {
   ];
   if (d.location) lines.push(`📍 <b>Место:</b> ${d.location}`);
   
-  // Блок реквизитов — собираем массив и оборачиваем в <pre>
+  // Блок реквизитов — каждое значение в <code> для копирования одним тапом
   const reqLines = [];
-  if (d.reqs && d.reqs.fromBank) reqLines.push(`Банк отправки: ${d.reqs.fromBank}    `);
-  if (d.reqs && d.reqs.toName)   reqLines.push(`Получатель: ${d.reqs.toName}    `);
-  if (d.reqs && d.reqs.toPhone)  reqLines.push(`Телефон/карта: ${d.reqs.toPhone}    `);
-  if (d.reqs && d.reqs.toBank)   reqLines.push(`Банк получателя: ${d.reqs.toBank}    `);
-  if (d.reqs && d.reqs.usdtNet)  reqLines.push(`Сеть USDT: ${d.reqs.usdtNet}     `);
-  if (d.reqs && d.reqs.usdtAddr) reqLines.push(`Адрес: ${d.reqs.usdtAddr}    `);
+  if (d.reqs && d.reqs.fromBank) reqLines.push(`<b>Банк отправки:</b> <code>${d.reqs.fromBank}</code>`);
+  if (d.reqs && d.reqs.toName)   reqLines.push(`<b>Получатель:</b> <code>${d.reqs.toName}</code>`);
+  if (d.reqs && d.reqs.toPhone)  reqLines.push(`<b>Телефон/карта:</b> <code>${d.reqs.toPhone}</code>`);
+  if (d.reqs && d.reqs.toBank)   reqLines.push(`<b>Банк получателя:</b> <code>${d.reqs.toBank}</code>`);
+  if (d.reqs && d.reqs.usdtNet)  reqLines.push(`<b>Сеть USDT:</b> <code>${d.reqs.usdtNet}</code>`);
+  if (d.reqs && d.reqs.usdtAddr) reqLines.push(`<b>Адрес:</b> <code>${d.reqs.usdtAddr}</code>`);
   
   if (reqLines.length > 0) {
-    lines.push(``, `<pre>${reqLines.join('\n')}</pre>`);
+    lines.push(``, `<b>📝 Реквизиты:</b>`, ...reqLines);
   }
   
   if (d.comment) lines.push(``, `<b>Комментарий:</b> ${d.comment}`);
