@@ -282,8 +282,6 @@ export default async function handler(req, res) {
       await tgSend(GROUP_ID, fullMsg, RISK_THREAD_ID);
     }
     
-    // Сохраняем уведомление в Risk Alerts
-    await saveAlert(userId, username, firstName, risk.summary, '/start', risk.flags.join(' | '));
     
     // Записываем нового клиента в "Визиты" (без checkOnly)
     if (APPS_SCRIPT_URL) {
