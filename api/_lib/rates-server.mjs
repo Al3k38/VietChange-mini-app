@@ -149,12 +149,15 @@ function roundDisplayRate(rate) {
 }
 
 // ─── ПАРСИНГ КЛИЕНТСКОЙ СТРОКИ КУРСА ─────────────────────────
-// Клиент шлёт «1 RUB = 315 VND» или «1 RUB = 315.5 VND».
+// Клиент шлёт «1 USDT = 25.500 VND» или «1 USDT = 84,5 RUB».
+// Русский формат: точка — разделитель тысяч, запятая — десятичный.
 export function parseClientRateString(s) {
   if (!s || typeof s !== 'string') return null;
   const m = s.match(/=\s*([\d\s.,]+)/);
   if (!m) return null;
-  const num = parseFloat(m[1].replace(/\s/g, '').replace(',', '.'));
+  const num = parseFloat(
+    m[1].replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
+  );
   return isFinite(num) ? num : null;
 }
 
