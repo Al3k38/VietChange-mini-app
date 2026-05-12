@@ -1,12 +1,15 @@
 // api/order.js — Vercel Serverless Function with Telegram InitData verification + PuzzleBot
+// SECURITY: ставка/сумма пересчитываются на сервере (см. _lib/rates-server.mjs).
 
 import crypto from 'crypto';
 import { assessRisk, formatRiskBlock, formatRiskShort } from './risk-check.mjs';
+import { recalcOrder } from './_lib/rates-server.mjs';
+import { esc } from './_lib/escape.mjs';
+import { sheetsPost } from './_lib/sheets.mjs';
 
 const BOT_TOKEN        = process.env.BOT_TOKEN;
 const GROUP_ID         = process.env.GROUP_ID;
 const THREAD_ID        = process.env.THREAD_ID;
-const APPS_SCRIPT_URL  = process.env.APPS_SCRIPT_URL;
 const PUZZLEBOT_TOKEN  = process.env.PUZZLEBOT_TOKEN;
 const PUZZLEBOT_CMD    = process.env.PUZZLEBOT_CMD || 'Повтор заявки (Mini App)';
 
@@ -22,7 +25,12 @@ function verifyTelegramInitData(initData, botToken) {
     .join('\n');
   const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
   const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
-  if (computedHash !== hash) return null;
+  // constant-time сравнение
+  try {
+    const a = Buffer.from(computedHash, 'hex');
+    const b = Buffer.from(hash, 'hex');
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  } catch { return null; }
   const authDate = parseInt(params.get('auth_date') || '0');
   if (Date.now()/1000 - authDate > 3600) return null;
   try {
@@ -43,9 +51,9 @@ function nowVN() {
 
 async function tgSend(chatId, text, threadId, replyToMessageId) {
   try {
-    const body = { 
-      chat_id: chatId, 
-      text, 
+    const body = {
+      chat_id: chatId,
+      text,
       parse_mode: 'HTML',
       disable_web_page_preview: true,
     };
@@ -60,7 +68,6 @@ async function tgSend(chatId, text, threadId, replyToMessageId) {
   } catch(e) { console.error('tgSend error:', e); }
 }
 
-// Установка переменной PuzzleBot для конкретного клиента
 async function puzzleSetVariable(userId, variableName, value) {
   if (!PUZZLEBOT_TOKEN || !userId || !variableName) return;
   try {
@@ -69,15 +76,12 @@ async function puzzleSetVariable(userId, variableName, value) {
     const data = await res.json();
     if (data.code !== 0) {
       console.warn('PuzzleBot variableChange error:', data);
-    } else {
-      console.log(`PuzzleBot var "${variableName}" = "${value}" set for user ${userId}`);
     }
-  } catch(e) { 
-    console.error('PuzzleBot setVariable error:', e); 
+  } catch(e) {
+    console.error('PuzzleBot setVariable error:', e);
   }
 }
 
-// Вызов команды PuzzleBot — клиент получит сообщение с кнопками
 async function puzzleSendCommand(userId, commandName) {
   if (!PUZZLEBOT_TOKEN || !userId) return;
   try {
@@ -89,34 +93,25 @@ async function puzzleSendCommand(userId, commandName) {
 }
 
 async function appendToSheet(data) {
-  if (!APPS_SCRIPT_URL) return;
-  try {
-    await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-      redirect: 'follow',
-    });
-  } catch(e) { console.error('Sheets error:', e); }
+  await sheetsPost(data);
 }
 
-function buildGroupMessage(d, orderNum) {
-  // Имя клиента — ссылка на чат через tg://user?id=...
+function buildGroupMessage(d, orderNum, mismatchFlag) {
+  // ВСЕ значения от клиента — через esc(). Только серверные литералы вставляются как есть.
   const clientName = d.firstName || (d.username && d.username.replace('@','')) || 'Клиент';
   const userIdSafe = d.userId || '';
-  const clientLink = userIdSafe 
-    ? `<a href="tg://user?id=${userIdSafe}">${clientName}</a>` 
-    : clientName;
-  const usernamePart = (d.username && d.username.startsWith('@')) ? ` · ${d.username}` : '';
-  
-  // Флаги стран по коду валюты
+  const clientLink = userIdSafe
+    ? `<a href="tg://user?id=${userIdSafe}">${esc(clientName)}</a>`
+    : esc(clientName);
+  const usernamePart = (d.username && d.username.startsWith('@')) ? ` · ${esc(d.username)}` : '';
+
   const FLAGS = {
-    'RUB': '🇷🇺', 'USDT': '💵', 'VND': '🇻🇳', 
+    'RUB': '🇷🇺', 'USDT': '💵', 'VND': '🇻🇳',
     'KZT': '🇰🇿', 'USD': '🇺🇸', 'EUR': '🇪🇺',
   };
   const fromFlag = FLAGS[d.fromCode] || '';
   const toFlag = FLAGS[d.toCode] || '';
-  
+
   const lines = [
     `<b>Встреча №</b>`,
     `${nowVN()}`,
@@ -125,31 +120,34 @@ function buildGroupMessage(d, orderNum) {
     `<b>Клиент:</b> ${clientLink}${usernamePart}`,
     `<b>ID:</b> <code>${userIdSafe || '—'}</code>`,
     ``,
-    `<b>Обмен: ${d.fromLabel} → ${d.toLabel}</b>`,
-    `<b>Продажа:</b> <code>${d.amtFrom}</code> ${fromFlag} ${d.fromCode}`,
-    `<b>Покупка:</b> <code>${d.amtTo}</code> ${toFlag} ${d.toCode}`,
-    `<pre>Курс: ${d.rate}  </pre>`,
-    ``,
-    `<b>Способ:</b> ${d.method}`,
-    `<b>Дата:</b> ${d.date}`,
-    `<b>Время:</b> ${d.time}`,
+    `<b>Обмен: ${esc(d.fromLabel)} → ${esc(d.toLabel)}</b>`,
+    `<b>Продажа:</b> <code>${esc(d.amtFrom)}</code> ${fromFlag} ${esc(d.fromCode)}`,
+    `<b>Покупка:</b> <code>${esc(d.amtTo)}</code> ${toFlag} ${esc(d.toCode)}`,
+    `<pre>Курс: ${esc(d.rate)}  </pre>`,
   ];
-  if (d.location) lines.push(`📍 <b>Место:</b> ${d.location}`);
-  
-  // Блок реквизитов — каждое значение в <code> для копирования одним тапом
+  // ── Если курс/сумма были подменены клиентом — выводим явный флаг (уже эскейпнут внутри)
+  if (mismatchFlag) lines.push(mismatchFlag);
+  lines.push(
+    ``,
+    `<b>Способ:</b> ${esc(d.method)}`,
+    `<b>Дата:</b> ${esc(d.date)}`,
+    `<b>Время:</b> ${esc(d.time)}`,
+  );
+  if (d.location) lines.push(`📍 <b>Место:</b> ${esc(d.location)}`);
+
   const reqLines = [];
-  if (d.reqs && d.reqs.fromBank) reqLines.push(`<b>Банк отправки:</b> <code>${d.reqs.fromBank}</code>`);
-  if (d.reqs && d.reqs.toName)   reqLines.push(`<b>Получатель:</b> <code>${d.reqs.toName}</code>`);
-  if (d.reqs && d.reqs.toPhone)  reqLines.push(`<b>Телефон/карта:</b> <code>${d.reqs.toPhone}</code>`);
-  if (d.reqs && d.reqs.toBank)   reqLines.push(`<b>Банк получателя:</b> <code>${d.reqs.toBank}</code>`);
-  if (d.reqs && d.reqs.usdtNet)  reqLines.push(`<b>Сеть USDT:</b> <code>${d.reqs.usdtNet}</code>`);
-  if (d.reqs && d.reqs.usdtAddr) reqLines.push(`<b>Адрес:</b> <code>${d.reqs.usdtAddr}</code>`);
-  
+  if (d.reqs && d.reqs.fromBank) reqLines.push(`<b>Банк отправки:</b> <code>${esc(d.reqs.fromBank)}</code>`);
+  if (d.reqs && d.reqs.toName)   reqLines.push(`<b>Получатель:</b> <code>${esc(d.reqs.toName)}</code>`);
+  if (d.reqs && d.reqs.toPhone)  reqLines.push(`<b>Телефон/карта:</b> <code>${esc(d.reqs.toPhone)}</code>`);
+  if (d.reqs && d.reqs.toBank)   reqLines.push(`<b>Банк получателя:</b> <code>${esc(d.reqs.toBank)}</code>`);
+  if (d.reqs && d.reqs.usdtNet)  reqLines.push(`<b>Сеть USDT:</b> <code>${esc(d.reqs.usdtNet)}</code>`);
+  if (d.reqs && d.reqs.usdtAddr) reqLines.push(`<b>Адрес:</b> <code>${esc(d.reqs.usdtAddr)}</code>`);
+
   if (reqLines.length > 0) {
     lines.push(``, `<b>📝 Реквизиты:</b>`, ...reqLines);
   }
-  
-  if (d.comment) lines.push(``, `<b>Комментарий:</b> ${d.comment}`);
+
+  if (d.comment) lines.push(``, `<b>Комментарий:</b> ${esc(d.comment)}`);
   lines.push(``, `<i>№ заявки: ${orderNum}</i>`);
   return lines.join('\n');
 }
@@ -157,19 +155,19 @@ function buildGroupMessage(d, orderNum) {
 function buildClientMessage(d, orderNum) {
   const name = d.firstName || d.username || 'Клиент';
   const lines = [
-    `<b>${name}, ваша заявка принята! 🎉</b>`,
+    `<b>${esc(name)}, ваша заявка принята! 🎉</b>`,
     ``,
     `<b>№ заявки:</b> ${orderNum}`,
     ``,
-    `<b>Обмен: ${d.fromLabel} → ${d.toLabel}</b>`,
-    `<b>Продажа:</b> ${d.amtFrom} ${d.fromCode}`,
-    `<b>Покупка:</b> ${d.amtTo} ${d.toCode}`,
+    `<b>Обмен: ${esc(d.fromLabel)} → ${esc(d.toLabel)}</b>`,
+    `<b>Продажа:</b> ${esc(d.amtFrom)} ${esc(d.fromCode)}`,
+    `<b>Покупка:</b> ${esc(d.amtTo)} ${esc(d.toCode)}`,
     ``,
-    `<b>Способ:</b> ${d.method}`,
-    `<b>Дата:</b> ${d.date}, ${d.time}`,
+    `<b>Способ:</b> ${esc(d.method)}`,
+    `<b>Дата:</b> ${esc(d.date)}, ${esc(d.time)}`,
   ];
-  if (d.location) lines.push(`<b>Место:</b> ${d.location}`);
-  if (d.comment)  lines.push(`<b>Комментарий:</b> ${d.comment}`);
+  if (d.location) lines.push(`<b>Место:</b> ${esc(d.location)}`);
+  if (d.comment)  lines.push(`<b>Комментарий:</b> ${esc(d.comment)}`);
   lines.push(``, `<b>Ваша заявка уже в обработке. Ожидайте уведомление 🔔</b>`);
   return lines.join('\n');
 }
@@ -198,59 +196,85 @@ export default async function handler(req, res) {
     const orderNum = genOrderNum();
     const datetime = nowVN();
 
-    // Считаем рублёвый эквивалент суммы для риск-проверки
+    // ─── СЕРВЕРНЫЙ ПЕРЕСЧЁТ КУРСА И СУММЫ ────────────────────
+    // Защита от подмены: курс/сумма получения никогда не берутся «как есть»
+    // от клиента — сервер сам считает по актуальным курсам + applyRateLogic.
+    let mismatchFlag = '';
     let rubEquiv = 0;
+    let serverRecalc = null;
     try {
-      const amt = parseFloat(String(d.amtFrom).replace(/[^\d.,]/g,'').replace(',','.')) || 0;
-      if (d.fromCode === 'RUB') {
-        rubEquiv = amt;
-      } else if (d.fromCode === 'USDT' || d.fromCode === 'USD') {
-        rubEquiv = amt * 80;
-      } else if (d.fromCode === 'EUR') {
-        rubEquiv = amt * 86;
-      } else if (d.fromCode === 'KZT') {
-        rubEquiv = amt * 0.18;
-      } else if (d.fromCode === 'VND') {
-        rubEquiv = amt * 0.003;
-      }
-    } catch(e) { /* без эквивалента — не критично */ }
+      serverRecalc = await recalcOrder({
+        amtFrom: d.amtFrom,
+        fromCode: d.fromCode,
+        toCode:   d.toCode,
+        clientRateStr: d.rate,
+      });
+    } catch (e) {
+      console.error('[order] recalcOrder threw:', e);
+    }
 
-    // Запрос к Apps Script для получения firstSeen + истории имён клиента
+    if (serverRecalc && serverRecalc.verified) {
+      rubEquiv = serverRecalc.rubEquiv || 0;
+      // Подменяем клиентские значения серверными — менеджер видит правду
+      const clientRateOriginal = d.rate;
+      const clientAmtToOriginal = d.amtTo;
+      d.rate  = serverRecalc.serverRateStr;
+      d.amtTo = serverRecalc.serverAmtToFormatted;
+
+      if (serverRecalc.mismatch) {
+        // Не отклоняем заявку (UX), но явно подсвечиваем менеджеру
+        console.warn(
+          `[order] RATE MISMATCH userId=${d.userId} client="${clientRateOriginal}" server="${serverRecalc.serverRateStr}" Δ=${serverRecalc.mismatchPct}%`
+        );
+        mismatchFlag =
+          `\n❗ <b>Расхождение курса (${serverRecalc.mismatchPct}%):</b>\n` +
+          `   клиент видел: <code>${esc(clientRateOriginal)}</code>\n` +
+          `   клиент сумму: <code>${esc(clientAmtToOriginal)}</code>\n` +
+          `   сервер пересчитал по актуальному курсу.`;
+      }
+    } else {
+      // Серверу не удалось проверить — пишем warning, оставляем клиентские значения
+      const reason = (serverRecalc && serverRecalc.reason) || 'unknown';
+      console.warn(`[order] recalc not verified: ${reason}`);
+      mismatchFlag = `\n⚠️ <b>Сервер не смог проверить курс</b> (<code>${esc(reason)}</code>) — данные взяты от клиента.`;
+      // Fallback на старую формулу rubEquiv для риск-проверки.
+      // Парсинг по русскому формату: точка — тысячи, запятая — десятичная.
+      try {
+        const amt = parseFloat(String(d.amtFrom).replace(/\s/g,'').replace(/\./g,'').replace(',','.')) || 0;
+        if (d.fromCode === 'RUB') rubEquiv = amt;
+        else if (d.fromCode === 'USDT' || d.fromCode === 'USD') rubEquiv = amt * 80;
+        else if (d.fromCode === 'EUR') rubEquiv = amt * 86;
+        else if (d.fromCode === 'KZT') rubEquiv = amt * 0.18;
+        else if (d.fromCode === 'VND') rubEquiv = amt * 0.003;
+      } catch (e) { /* skip */ }
+    }
+
+    // Запрос к Apps Script для firstSeen + истории
     let firstSeen = null;
     let nameChanges = 0;
     let usernameChanges = 0;
-    if (APPS_SCRIPT_URL && d.userId) {
-      try {
-        const visitRes = await fetch(APPS_SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'visit',
-            userId: d.userId,
-            username: d.username || '',
-            firstName: d.firstName || '',
-            datetime: nowVN(),
-            checkOnly: true,  // флаг чтобы не записывать дубликат визита
-          }),
-          redirect: 'follow',
-        });
-        if (visitRes.ok) {
-          const visitData = await visitRes.json();
-          firstSeen = visitData.firstSeen || null;
-          nameChanges = visitData.nameChanges || 0;
-          usernameChanges = visitData.usernameChanges || 0;
-        }
-      } catch(e) { 
-        console.error('Visit lookup failed:', e); 
+    if (d.userId) {
+      const visitData = await sheetsPost({
+        type: 'visit',
+        userId: d.userId,
+        username: d.username || '',
+        firstName: d.firstName || '',
+        datetime: nowVN(),
+        checkOnly: true,
+      });
+      if (visitData) {
+        firstSeen = visitData.firstSeen || null;
+        nameChanges = visitData.nameChanges || 0;
+        usernameChanges = visitData.usernameChanges || 0;
       }
     }
-    
-    // Риск-проверка клиента (CAS, LolsBot, эвристики + история)
+
+    // Риск-проверка
     let riskShort = '';
     let riskBlock = '';
     try {
-      const risk = await assessRisk(d.userId, { 
-        username: d.username, 
+      const risk = await assessRisk(d.userId, {
+        username: d.username,
         rubEquiv,
         photoUrl: d.photoUrl || '',
         firstSeen,
@@ -259,36 +283,30 @@ export default async function handler(req, res) {
       });
       riskShort = formatRiskShort(risk);
       riskBlock = formatRiskBlock(risk);
-      console.log('Risk check:', risk.summary, '| flags:', risk.flags.length, '| nameChanges:', nameChanges, '| usernameChanges:', usernameChanges);
+      console.warn('Risk check:', risk.summary, '| flags:', risk.flags.length);
     } catch(e) {
       console.error('Risk check failed:', e);
     }
 
-    // Основное сообщение в группу — с краткой строкой риска внизу
-    const groupMsg = buildGroupMessage(d, orderNum) + (riskShort ? '\n\n' + riskShort : '');
+    const groupMsg = buildGroupMessage(d, orderNum, mismatchFlag) + (riskShort ? '\n\n' + riskShort : '');
     let orderMessageId = null;
     if (GROUP_ID) {
       const orderResp = await tgSend(GROUP_ID, groupMsg, THREAD_ID);
-      // Сохраняем message_id для reply с деталями риска
       if (orderResp && orderResp.ok && orderResp.result) {
         orderMessageId = orderResp.result.message_id;
       }
     }
-    
-    // Детали риск-проверки — отдельным сообщением в reply на заявку
+
     if (GROUP_ID && riskBlock && orderMessageId) {
       await tgSend(GROUP_ID, riskBlock, THREAD_ID, orderMessageId);
     }
-   if (d.userId) {
-     // Записываем сумму в переменную PuzzleBot "usdt" — ТОЛЬКО когда клиент отдаёт USDT
-      // (нужно для сценария с реквизитами USDT в чат-боте)
+    if (d.userId) {
       if (d.fromCode === 'USDT') {
         const amtFromNumber = String(d.amtFrom).replace(/[^\d.,]/g,'').replace(',','.');
         await puzzleSetVariable(d.userId, 'sum_3', amtFromNumber);
       }
-      
+
       await tgSend(d.userId, buildClientMessage(d, orderNum));
-      // Через секунду вызываем команду PuzzleBot — клиент получит кнопки
       await new Promise(r => setTimeout(r, 800));
       await puzzleSendCommand(d.userId, PUZZLEBOT_CMD);
     }
@@ -300,8 +318,8 @@ export default async function handler(req, res) {
       fromLabel: d.fromLabel || '',
       amtFrom:   d.amtFrom   || '',
       toLabel:   d.toLabel   || '',
-      amtTo:     d.amtTo     || '',
-      rate:      d.rate      || '',
+      amtTo:     d.amtTo     || '',       // ← уже серверное значение
+      rate:      d.rate      || '',       // ← уже серверное значение
       method:    d.method    || '',
       date:      d.date      || '',
       time:      d.time      || '',
@@ -314,12 +332,11 @@ export default async function handler(req, res) {
 
   } catch(e) {
     console.error('Handler error:', e);
-    // Алерт в General-топик что заявка не доставлена
     try {
       if (GROUP_ID) {
         const errMsg = `🚨 <b>ОШИБКА ОБРАБОТКИ ЗАЯВКИ</b>\n\n` +
           `❌ Заявка от клиента не была отправлена!\n\n` +
-          `<b>Ошибка:</b> ${e.message || 'Unknown'}\n` +
+          `<b>Ошибка:</b> ${esc(e.message || 'Unknown')}\n` +
           `<b>Время:</b> ${nowVN()}\n\n` +
           `⚠️ Свяжитесь с клиентом вручную если он напишет в чат.`;
         await tgSend(GROUP_ID, errMsg, null);
