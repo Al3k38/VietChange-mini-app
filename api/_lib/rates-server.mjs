@@ -158,15 +158,31 @@ export function parseClientRateString(s) {
   return isFinite(num) ? num : null;
 }
 
-// Простой форматтер с пробелами как разделителями тысяч
+// Форматтер по русскому стилю — точка как разделитель тысяч, запятая как
+// десятичный. Совпадает с клиентским formatNum в index.html.
+//   77800     → "77.800"
+//   24578000  → "24.578.000"
+//   10.5      → "10,5" (USDT)
 function formatNum(n) {
   if (n === null || n === undefined || isNaN(n)) return '';
   const sign = n < 0 ? '-' : '';
   const abs = Math.abs(n);
-  const fixed = abs % 1 === 0 ? String(abs) : String(abs);
-  const [intPart, decPart] = fixed.split('.');
-  const withSep = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const [intPart, decPart] = String(abs).split('.');
+  const withSep = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   return sign + (decPart ? `${withSep},${decPart}` : withSep);
+}
+
+// Округление СУММЫ по правилам валюты — порт roundAmount из index.html.
+//   RUB: до 50, USDT: до 0.1, VND: до 1000, KZT: до 100, USD/EUR: до 1.
+function roundAmountServer(amount, currency) {
+  if (!amount || !isFinite(amount)) return 0;
+  const c = String(currency || '').replace('_b', '').replace('_c', '');
+  if (c === 'RUB')                  return Math.round(amount / 50) * 50;
+  if (c === 'USDT')                 return Math.round(amount * 10) / 10;
+  if (c === 'VND')                  return Math.round(amount / 1000) * 1000;
+  if (c === 'KZT')                  return Math.round(amount / 100) * 100;
+  if (c === 'USD' || c === 'EUR')   return Math.round(amount);
+  return Math.round(amount * 100) / 100;
 }
 
 // ─── ГЛАВНАЯ ФУНКЦИЯ ─────────────────────────────────────────
@@ -222,12 +238,15 @@ export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr }) 
     mismatch = mismatchPct > 0.5;
   }
 
+  // Округление суммы получения по правилам целевой валюты
+  const serverAmtToRounded = roundAmountServer(serverAmtTo, toCode);
+
   return {
     verified: true,
     serverRate: dispRateRounded,
     serverRateStr,
-    serverAmtTo,
-    serverAmtToFormatted: formatNum(Math.round(serverAmtTo * 100) / 100),
+    serverAmtTo: serverAmtToRounded,
+    serverAmtToFormatted: formatNum(serverAmtToRounded),
     serverAmtFromNum: amtFromNum,
     rubEquiv,
     note,
