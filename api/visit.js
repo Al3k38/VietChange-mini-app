@@ -1,11 +1,12 @@
 // api/visit.js — Логирование визитов клиентов в Mini App
 
 import crypto from 'crypto';
+import { sheetsPost } from './_lib/sheets.mjs';
+import { esc } from './_lib/escape.mjs';
 
 const BOT_TOKEN          = process.env.BOT_TOKEN;
 const GROUP_ID           = process.env.GROUP_ID;
 const GENERAL_THREAD_ID  = process.env.GENERAL_THREAD_ID;
-const APPS_SCRIPT_URL    = process.env.APPS_SCRIPT_URL;
 const RISK_CHECK_SECRET  = process.env.RISK_CHECK_SECRET;
 
 function verifyTelegramInitData(initData, botToken) {
@@ -20,7 +21,11 @@ function verifyTelegramInitData(initData, botToken) {
     .join('\n');
   const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
   const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
-  if (computedHash !== hash) return null;
+  try {
+    const a = Buffer.from(computedHash, 'hex');
+    const b = Buffer.from(hash, 'hex');
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  } catch { return null; }
   const authDate = parseInt(params.get('auth_date') || '0');
   if (Date.now()/1000 - authDate > 3600) return null;
   try {
@@ -59,75 +64,15 @@ async function tgSend(chatId, text, threadId) {
   try {
     const body = { chat_id: chatId, text, parse_mode: 'HTML' };
     if (threadId) body.message_thread_id = parseInt(threadId);
-    console.log('TG SEND request:', JSON.stringify(body));
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    const json = await res.json();
-    console.log('TG SEND response:', JSON.stringify(json));
-    return json;
+    return res.json();
   } catch(e) {
     console.error('tgSend error:', e);
     return { ok: false, error: e.message };
-  }
-}
-
-// Проверка — было ли уведомление "Клиент в Mini App" за последний час
-async function checkVisitAlert(userId) {
-  if (!APPS_SCRIPT_URL || !userId) return false;
-  try {
-    const res = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'check_visit_alert', userId: String(userId) }),
-      redirect: 'follow',
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    return data.recentAlert === true;
-  } catch(e) { 
-    console.warn('[visit] check_visit_alert failed:', e.message);
-    return false;
-  }
-}
-
-// Сохранение нового "Клиент в Mini App" уведомления
-async function saveVisitAlert(userId, username, firstName) {
-  if (!APPS_SCRIPT_URL || !userId) return;
-  try {
-    await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'save_visit_alert',
-        datetime: nowVN(),
-        userId: String(userId),
-        username: username || '',
-        firstName: firstName || '',
-      }),
-      redirect: 'follow',
-    });
-  } catch(e) { 
-    console.warn('[visit] save_visit_alert failed:', e.message);
-  }
-}
-
-async function logToSheet(data) {
-  if (!APPS_SCRIPT_URL) return null;
-  try {
-    const res = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'visit', ...data }),
-      redirect: 'follow',
-    });
-    const json = await res.json().catch(() => ({}));
-    return json;
-  } catch(e) { 
-    console.error('Sheets error:', e);
-    return null;
   }
 }
 
@@ -154,20 +99,18 @@ export default async function handler(req, res) {
     const tgVersion = d.version  || '';
     const datetime  = nowVN();
 
-    // Сначала вычисляем accountYear для записи в Sheets
     const accountYearForSheet = estimateAccountYear(userId);
-    
-    // Сначала пишем в Sheets и получаем firstSeen
-    const sheetResp = await logToSheet({
+
+    // Пишем визит и получаем firstSeen
+    const sheetResp = await sheetsPost({
+      type: 'visit',
       datetime, userId, username, firstName, lastName,
       lang, isPremium, platform, tgVersion,
       accountYear: accountYearForSheet,
     });
-    
-    // Дата первого визита (из ответа Apps Script)
+
     const firstSeen = sheetResp && sheetResp.firstSeen ? sheetResp.firstSeen : null;
-    
-    // Примерный год регистрации Telegram-аккаунта
+
     const accountYear = estimateAccountYear(userId);
     const currentYear = new Date().getFullYear();
     let accountAgeText = '';
@@ -178,8 +121,7 @@ export default async function handler(req, res) {
       else if (age < 5) accountAgeText = `🕐 <b>Аккаунт:</b> ~${accountYear} (${age} года)`;
       else accountAgeText = `🕐 <b>Аккаунт:</b> ~${accountYear} (${age} лет)`;
     }
-    
-    // С нами с — расчёт возраста
+
     let withUsText = '';
     if (firstSeen) {
       const firstDate = new Date(firstSeen);
@@ -203,32 +145,39 @@ export default async function handler(req, res) {
       withUsText = `👋 <b>С нами с:</b> ${ddmm} (${ageStr})`;
     }
 
-    // Сообщение в General-топик
+    // Сообщение в General-топик (имя/username — через esc, на всякий случай)
     const msg = [
       `👤 <b>Клиент в Mini App</b>`,
       `📅 ${datetime}`,
       ``,
-      `<b>Имя:</b> ${firstName} ${lastName}`.trim(),
-      username ? `<b>Username:</b> ${username}` : null,
+      `<b>Имя:</b> ${esc(firstName)} ${esc(lastName)}`.trim(),
+      username ? `<b>Username:</b> ${esc(username)}` : null,
       `<b>ID:</b> <code>${userId}</code>`,
       accountAgeText || null,
       withUsText || null,
-      `<b>Язык:</b> ${lang || '—'} · <b>Premium:</b> ${isPremium}`,
-      `<b>Платформа:</b> ${platform || '—'} · Telegram ${tgVersion || '—'}`,
+      `<b>Язык:</b> ${esc(lang) || '—'} · <b>Premium:</b> ${isPremium}`,
+      `<b>Платформа:</b> ${esc(platform) || '—'} · Telegram ${esc(tgVersion) || '—'}`,
     ].filter(Boolean).join('\n');
 
-    // Антиспам: проверяем было ли "Клиент в Mini App" за последний час
-    const recentVisitAlert = await checkVisitAlert(userId);
+    // Антиспам: было ли уведомление за последний час
+    const recentRes = await sheetsPost({ type: 'check_visit_alert', userId: String(userId) });
+    const recentVisitAlert = recentRes && recentRes.recentAlert === true;
+
     if (GROUP_ID && !recentVisitAlert) {
-      const r = await tgSend(GROUP_ID, msg, null);
-      console.log('TG SEND result:', JSON.stringify(r));
-      // Записываем что отправили, чтобы не спамить в течение часа
-      await saveVisitAlert(userId, username, firstName);
+      await tgSend(GROUP_ID, msg, null);
+      await sheetsPost({
+        type: 'save_visit_alert',
+        datetime: nowVN(),
+        userId: String(userId),
+        username: username || '',
+        firstName: firstName || '',
+      });
     } else if (recentVisitAlert) {
-      console.log(`[visit] Skip alert for ${userId} — recent visit within 1 hour`);
+      console.warn(`[visit] Skip alert for ${userId} — recent visit within 1 hour`);
     }
 
-    // Запуск риск-проверки — с await чтобы Vercel не убил процесс до отправки
+    // Запуск риск-проверки (свой endpoint, не Apps Script).
+    // NB: token в URL — оставлено как было; будет переведено на Authorization-header в задаче #5.
     if (RISK_CHECK_SECRET) {
       const proto = req.headers['x-forwarded-proto'] || 'https';
       const host = req.headers.host;
@@ -236,7 +185,7 @@ export default async function handler(req, res) {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
-        const r = await fetch(riskUrl, {
+        await fetch(riskUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -250,18 +199,17 @@ export default async function handler(req, res) {
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
-        console.log('[visit] risk-on-start status:', r.status);
       } catch(e) {
         console.warn('[visit] risk-on-start failed:', e.message);
       }
     }
 
     return res.status(200).json({ ok: true });
-} catch(e) {
+  } catch(e) {
     console.error('Visit handler error:', e);
     try {
       if (GROUP_ID) {
-        await tgSend(GROUP_ID, `⚠️ Ошибка логирования визита: ${e.message}`, null);
+        await tgSend(GROUP_ID, `⚠️ Ошибка логирования визита: ${esc(e.message)}`, null);
       }
     } catch(_) {}
     return res.status(500).json({ ok: false, error: 'Internal error' });
