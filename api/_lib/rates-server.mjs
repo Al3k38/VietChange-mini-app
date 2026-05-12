@@ -175,8 +175,10 @@ export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr }) 
   const rates = await getServerRates();
   if (!rates) return { verified: false, reason: 'rates_unavailable' };
 
+  // Парсинг по русскому формату: точка — разделитель тысяч, запятая — десятичный.
+  // Совпадает с Apps Script parseAmount. "77.800" → 77800, "10,5" → 10.5
   const amtFromNum = parseFloat(
-    String(amtFrom || '').replace(/[^\d.,]/g, '').replace(',', '.')
+    String(amtFrom || '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
   ) || 0;
   if (amtFromNum <= 0) return { verified: false, reason: 'invalid_amount' };
 
