@@ -68,8 +68,13 @@ function hasCriticalSignals(risk) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // NB: token в query — оставлено как было; будет переведено в Authorization в задаче #5.
-  const token = req.query.token;
+  // Принимаем токен из Authorization-header (предпочтительно — не светится в логах)
+  // ИЛИ из URL query — backwards-compat для PuzzleBot, пока его не перенастроим.
+  const authHeader = req.headers['authorization'] || '';
+  const headerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const queryToken  = req.query.token || '';
+  const token = headerToken || queryToken;
+
   if (!RISK_CHECK_SECRET || !token || token !== RISK_CHECK_SECRET) {
     console.warn('[risk-on-start] FORBIDDEN — token mismatch or missing');
     return res.status(403).json({ error: 'Forbidden' });
