@@ -1,37 +1,14 @@
 // api/visit.js — Логирование визитов клиентов в Mini App
 
-import crypto from 'crypto';
 import { sheetsPost } from './_lib/sheets.mjs';
 import { esc } from './_lib/escape.mjs';
+import { verifyTelegramInitData } from './_lib/verify.mjs';
 
 const BOT_TOKEN          = process.env.BOT_TOKEN;
 const GROUP_ID           = process.env.GROUP_ID;
 const GENERAL_THREAD_ID  = process.env.GENERAL_THREAD_ID;
 const RISK_CHECK_SECRET  = process.env.RISK_CHECK_SECRET;
 
-function verifyTelegramInitData(initData, botToken) {
-  if (!initData) return null;
-  const params = new URLSearchParams(initData);
-  const hash = params.get('hash');
-  if (!hash) return null;
-  params.delete('hash');
-  const dataCheckString = [...params.entries()]
-    .sort(([a],[b]) => a.localeCompare(b))
-    .map(([k,v]) => `${k}=${v}`)
-    .join('\n');
-  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
-  const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
-  try {
-    const a = Buffer.from(computedHash, 'hex');
-    const b = Buffer.from(hash, 'hex');
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  } catch { return null; }
-  const authDate = parseInt(params.get('auth_date') || '0');
-  if (Date.now()/1000 - authDate > 3600) return null;
-  try {
-    return JSON.parse(params.get('user') || '{}');
-  } catch { return null; }
-}
 
 // Примерное определение года регистрации Telegram-аккаунта по ID
 function estimateAccountYear(userId) {
