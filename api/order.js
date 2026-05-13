@@ -6,6 +6,8 @@ import { recalcOrder } from './_lib/rates-server.mjs';
 import { esc } from './_lib/escape.mjs';
 import { sheetsPost } from './_lib/sheets.mjs';
 import { verifyTelegramInitData } from './_lib/verify.mjs';
+import { setCorsHeaders } from './_lib/cors.mjs';
+import { markNonceUsed, getAuthDate } from './_lib/replay.mjs';
 
 const BOT_TOKEN        = process.env.BOT_TOKEN;
 const GROUP_ID         = process.env.GROUP_ID;
@@ -148,9 +150,7 @@ function buildClientMessage(d, orderNum) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  setCorsHeaders(req, res);
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')    return res.status(405).json({ error: 'Method not allowed' });
@@ -164,9 +164,18 @@ export default async function handler(req, res) {
       console.warn('Invalid initData, request rejected');
       return res.status(403).json({ error: 'Forbidden: invalid signature' });
     }
-    d.userId    = verifiedUser.id;
+   d.userId    = verifiedUser.id;
     d.username  = verifiedUser.username ? '@' + verifiedUser.username : (verifiedUser.first_name || 'Клиент');
     d.firstName = verifiedUser.first_name || d.username;
+
+    // Anti-replay: одну и ту же initData можно использовать для заявки только один раз.
+    // Чтобы оформить вторую — клиент закрывает Mini App и открывает заново.
+    const authDate = getAuthDate(d.initData);
+    const firstUse = await markNonceUsed(d.userId, authDate);
+    if (!firstUse) {
+      console.warn(`[order] REPLAY rejected userId=${d.userId} auth_date=${authDate}`);
+      return res.status(403).json({ error: 'Forbidden: replay detected' });
+    }
 
     const orderNum = genOrderNum();
     const datetime = nowVN();
