@@ -46,16 +46,18 @@ async function tgSend(chatId, text, threadId, replyToMessageId) {
 }
 
 async function puzzleSetVariable(userId, variableName, value) {
-  if (!PUZZLEBOT_TOKEN || !userId || !variableName) return;
+  if (!PUZZLEBOT_TOKEN || !userId || !variableName) {
+    console.warn(`[PuzzleBot] skipped variableChange: token/user/name missing (user=${userId}, var=${variableName})`);
+    return;
+  }
   try {
     const url = `https://api.puzzlebot.top/?token=${PUZZLEBOT_TOKEN}&method=variableChange&variable=${encodeURIComponent(variableName)}&expression=${encodeURIComponent(value)}&user_id=${userId}`;
     const res = await fetch(url);
     const data = await res.json();
-    if (data.code !== 0) {
-      console.warn('PuzzleBot variableChange error:', data);
-    }
+    // Всегда логируем результат — для отладки
+    console.warn(`[PuzzleBot] variableChange ${variableName}="${value}" user=${userId} → ${JSON.stringify(data)}`);
   } catch(e) {
-    console.error('PuzzleBot setVariable error:', e);
+    console.error('[PuzzleBot] setVariable error:', e);
   }
 }
 
