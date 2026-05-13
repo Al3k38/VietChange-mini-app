@@ -1,42 +1,17 @@
 // api/order.js — Vercel Serverless Function with Telegram InitData verification + PuzzleBot
 // SECURITY: ставка/сумма пересчитываются на сервере (см. _lib/rates-server.mjs).
 
-import crypto from 'crypto';
 import { assessRisk, formatRiskBlock, formatRiskShort } from './risk-check.mjs';
 import { recalcOrder } from './_lib/rates-server.mjs';
 import { esc } from './_lib/escape.mjs';
 import { sheetsPost } from './_lib/sheets.mjs';
+import { verifyTelegramInitData } from './_lib/verify.mjs';
 
 const BOT_TOKEN        = process.env.BOT_TOKEN;
 const GROUP_ID         = process.env.GROUP_ID;
 const THREAD_ID        = process.env.THREAD_ID;
 const PUZZLEBOT_TOKEN  = process.env.PUZZLEBOT_TOKEN;
 const PUZZLEBOT_CMD    = process.env.PUZZLEBOT_CMD || 'Повтор заявки (Mini App)';
-
-function verifyTelegramInitData(initData, botToken) {
-  if (!initData) return null;
-  const params = new URLSearchParams(initData);
-  const hash = params.get('hash');
-  if (!hash) return null;
-  params.delete('hash');
-  const dataCheckString = [...params.entries()]
-    .sort(([a],[b]) => a.localeCompare(b))
-    .map(([k,v]) => `${k}=${v}`)
-    .join('\n');
-  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
-  const computedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
-  // constant-time сравнение
-  try {
-    const a = Buffer.from(computedHash, 'hex');
-    const b = Buffer.from(hash, 'hex');
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  } catch { return null; }
-  const authDate = parseInt(params.get('auth_date') || '0');
-  if (Date.now()/1000 - authDate > 3600) return null;
-  try {
-    return JSON.parse(params.get('user') || '{}');
-  } catch { return null; }
-}
 
 function genOrderNum() {
   const d = new Date(Date.now() + 7 * 3600 * 1000);
