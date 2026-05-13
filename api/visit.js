@@ -3,6 +3,7 @@
 import { sheetsPost } from './_lib/sheets.mjs';
 import { esc } from './_lib/escape.mjs';
 import { verifyTelegramInitData } from './_lib/verify.mjs';
+import { setCorsHeaders } from './_lib/cors.mjs';
 
 const BOT_TOKEN          = process.env.BOT_TOKEN;
 const GROUP_ID           = process.env.GROUP_ID;
@@ -54,9 +55,7 @@ async function tgSend(chatId, text, threadId) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  setCorsHeaders(req, res);
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')    return res.status(405).json({ error: 'Method not allowed' });
@@ -158,13 +157,16 @@ export default async function handler(req, res) {
     if (RISK_CHECK_SECRET) {
       const proto = req.headers['x-forwarded-proto'] || 'https';
       const host = req.headers.host;
-      const riskUrl = `${proto}://${host}/api/risk-on-start?token=${RISK_CHECK_SECRET}`;
+      const riskUrl = `${proto}://${host}/api/risk-on-start`;
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         await fetch(riskUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${RISK_CHECK_SECRET}`,
+          },
           body: JSON.stringify({
             userId,
             username: username.replace(/^@/, ''),
