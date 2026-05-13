@@ -285,10 +285,11 @@ export default async function handler(req, res) {
       await tgSend(GROUP_ID, riskBlock, THREAD_ID, orderMessageId);
     }
     if (d.userId) {
-      if (d.fromCode === 'USDT') {
-        const amtFromNumber = String(d.amtFrom).replace(/[^\d.,]/g,'').replace(',','.');
-        await puzzleSetVariable(d.userId, 'Correct_sum_3', amtFromNumber);
-      }
+      // Сумма продажи в PuzzleBot-переменную Correct_sum_3 — для любой валюты.
+      // Парсинг русского формата: точка как тысячи, запятая как десятичная.
+      // "77.800" → "77800", "10,5" → "10.5".
+      const amtFromNumber = String(d.amtFrom).replace(/\s/g,'').replace(/\./g,'').replace(',','.');
+      await puzzleSetVariable(d.userId, 'Correct_sum_3', amtFromNumber);
 
       await tgSend(d.userId, buildClientMessage(d, orderNum));
       await new Promise(r => setTimeout(r, 800));
