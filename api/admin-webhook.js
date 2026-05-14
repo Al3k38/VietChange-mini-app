@@ -19,9 +19,15 @@ const ADMIN_WEBHOOK_SECRET = process.env.ADMIN_WEBHOOK_SECRET;
 const GROUP_ID             = process.env.GROUP_ID;
 const RISK_THREAD_ID       = process.env.RISK_THREAD_ID;
 
-// Список менеджеров (можно вынести в env ADMIN_USER_IDS="...,...")
-const ADMIN_USER_IDS = (process.env.ADMIN_USER_IDS || '5571369741,7146944016')
+// Список менеджеров читается строго из env ADMIN_USER_IDS (через запятую).
+// Без env список пустой → никто не админ → команды /check возвращают «доступ только менеджерам».
+// (Раньше тут был hardcoded fallback с реальными user ID, теперь убран —
+//  не светим админские контакты в публичной git-истории.)
+const ADMIN_USER_IDS = (process.env.ADMIN_USER_IDS || '')
   .split(',').map(s => s.trim()).filter(Boolean);
+if (ADMIN_USER_IDS.length === 0) {
+  console.error('[admin-webhook] ADMIN_USER_IDS env not set — admin commands disabled');
+}
 
 function nowVN() {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString()
@@ -246,7 +252,8 @@ export default async function handler(req, res) {
 
   } catch(e) {
     console.error('[admin-webhook] error:', e);
-    return res.status(200).json({ ok: false, error: e.message });
+    // Не светим e.message Telegram'у (он попадёт в логи Telegram).
+    return res.status(200).json({ ok: false });
   }
 }
 
