@@ -4,6 +4,9 @@ import { sheetsPost } from './_lib/sheets.mjs';
 import { esc } from './_lib/escape.mjs';
 import { verifyTelegramInitData } from './_lib/verify.mjs';
 import { setCorsHeaders } from './_lib/cors.mjs';
+import { checkRateLimit } from './_lib/ratelimit.mjs';
+
+const VISIT_PER_MINUTE = 10;
 
 const BOT_TOKEN          = process.env.BOT_TOKEN;
 const GROUP_ID           = process.env.GROUP_ID;
@@ -64,6 +67,14 @@ export default async function handler(req, res) {
     const d = req.body || {};
     const verifiedUser = verifyTelegramInitData(d.initData, BOT_TOKEN);
     if (!verifiedUser) return res.status(403).json({ error: 'Forbidden' });
+
+    // Rate limit per userId — защита от флуда группы менеджеров
+    // и записей в Sheets.
+    const rl = await checkRateLimit(`visit:${verifiedUser.id}`, VISIT_PER_MINUTE);
+    if (!rl.allowed) {
+      res.setHeader('Retry-After', '60');
+      return res.status(429).json({ ok: false, error: 'Too many requests' });
+    }
 
     const userId    = verifiedUser.id;
     const username  = verifiedUser.username ? '@' + verifiedUser.username : '';
