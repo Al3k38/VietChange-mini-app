@@ -219,20 +219,32 @@ export default async function handler(req, res) {
           `   сервер пересчитал по актуальному курсу.`;
       }
     } else {
-      // Серверу не удалось проверить — пишем warning, оставляем клиентские значения
       const reason = (serverRecalc && serverRecalc.reason) || 'unknown';
-      console.warn(`[order] recalc not verified: ${reason}`);
-      mismatchFlag = `\n⚠️ <b>Сервер не смог проверить курс</b> (<code>${esc(reason)}</code>) — данные взяты от клиента.`;
-      // Fallback на старую формулу rubEquiv для риск-проверки.
-      // Парсинг по русскому формату: точка — тысячи, запятая — десятичная.
-      try {
-        const amt = parseFloat(String(d.amtFrom).replace(/\s/g,'').replace(/\./g,'').replace(',','.')) || 0;
-        if (d.fromCode === 'RUB') rubEquiv = amt;
-        else if (d.fromCode === 'USDT' || d.fromCode === 'USD') rubEquiv = amt * 80;
-        else if (d.fromCode === 'EUR') rubEquiv = amt * 86;
-        else if (d.fromCode === 'KZT') rubEquiv = amt * 0.18;
-        else if (d.fromCode === 'VND') rubEquiv = amt * 0.003;
-      } catch (e) { /* skip */ }
+
+      if (reason === 'pair_not_found') {
+        // OTHER-пара (клиент выбрал «Другой банк / Другая сеть» с произвольной валютой) —
+        // в листе «Курсы» такой пары нет, сервер не знает курса. Пропускаем заявку
+        // с явной пометкой менеджеру: проверять курс и сумму вручную.
+        console.warn(`[order] OTHER pair (no server rate): ${d.fromCode} → ${d.toCode}`);
+        mismatchFlag = `\n⚠️ <b>OTHER-пара</b> (<code>${esc(d.fromCode)} → ${esc(d.toCode)}</code>) — сервер не знает курса, значения от клиента, курс и сумму проверить вручную.`;
+        // Fallback rubEquiv для риск-проверки (русский формат).
+        try {
+          const amt = parseFloat(String(d.amtFrom).replace(/\s/g,'').replace(/\./g,'').replace(',','.')) || 0;
+          if (d.fromCode === 'RUB') rubEquiv = amt;
+          else if (d.fromCode === 'USDT' || d.fromCode === 'USD') rubEquiv = amt * 80;
+          else if (d.fromCode === 'EUR') rubEquiv = amt * 86;
+          else if (d.fromCode === 'KZT') rubEquiv = amt * 0.18;
+          else if (d.fromCode === 'VND') rubEquiv = amt * 0.003;
+        } catch (e) { /* skip */ }
+      } else {
+        // rates_unavailable / rate_invalid / invalid_amount / unknown — отклоняем.
+        // Если пропустить, клиент мог бы подменить курс пока Apps Script лежит.
+        console.error(`[order] REJECT 503: recalc failed reason=${reason} userId=${d.userId}`);
+        return res.status(503).json({
+          ok: false,
+          error: 'Курсы временно недоступны. Попробуйте через минуту.',
+        });
+      }
     }
 
     // Запрос к Apps Script для firstSeen + истории
