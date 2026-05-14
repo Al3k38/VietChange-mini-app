@@ -32,20 +32,10 @@ export async function sheetsPost(payload) {
   }
 }
 
-// ─── GET → doGet (для /api/rates и серверного recalcOrder) ────
+// ─── Получение курсов (для /api/rates и серверного recalcOrder) ───
+// Раньше делал GET с секретом в URL (?secret=...) — секрет светился
+// в Apps Script execution logs. Теперь идём через doPost с секретом
+// в body, как все остальные методы.
 export async function sheetsGet() {
-  if (!APPS_SCRIPT_URL) return null;
-  const sep = APPS_SCRIPT_URL.includes('?') ? '&' : '?';
-  const url = `${APPS_SCRIPT_URL}${sep}secret=${encodeURIComponent(APPS_SCRIPT_SECRET || '')}`;
-  try {
-    const res = await fetch(url, { redirect: 'follow' });
-    if (!res.ok) {
-      console.warn('[sheets] get non-OK status:', res.status);
-      return null;
-    }
-    try { return await res.json(); } catch { return null; }
-  } catch (e) {
-    console.error('[sheets] get failed:', e.message);
-    return null;
-  }
+  return sheetsPost({ type: 'get_rates' });
 }
