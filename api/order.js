@@ -218,6 +218,20 @@ export default async function handler(req, res) {
           `   клиент сумму: <code>${esc(clientAmtToOriginal)}</code>\n` +
           `   сервер пересчитал по актуальному курсу.`;
       }
+
+      // Если курс из резервного хранилища (Apps Script был недоступен) —
+      // ОБЯЗАТЕЛЬНО предупреждаем менеджера.
+      if (serverRecalc.isFallback) {
+        const ageMin = Math.floor((serverRecalc.ratesAgeMs || 0) / 60000);
+        const sourceLabel = serverRecalc.ratesSource === 'stale-supabase'
+          ? 'persistent backup'
+          : 'in-memory';
+        console.warn(`[order] FALLBACK rates used: source=${serverRecalc.ratesSource} age=${ageMin}min`);
+        mismatchFlag = (mismatchFlag || '') +
+          `\n🚨 <b>КУРС РЕЗЕРВНЫЙ</b> (источник: ${sourceLabel}, возраст ~${ageMin} мин)\n` +
+          `   Google Sheets / Apps Script был недоступен — взят последний сохранённый курс.\n` +
+          `   <b>Проверьте курс вручную перед обменом.</b>`;
+      }
     } else {
       const reason = (serverRecalc && serverRecalc.reason) || 'unknown';
 
