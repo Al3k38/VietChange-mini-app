@@ -29,16 +29,23 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 // Возвращает:
 //   true  — эту пару (userId, authDate) видим впервые → разрешить
-//   false — повтор → отклонить запрос как replay
+//   false — повтор ИЛИ невозможно проверить → отклонить запрос
 //
-// Fail-open: при ошибке/недоступности Supabase возвращаем true,
-// чтобы не блокировать заявки клиентов из-за инфраструктурных проблем.
+// Fail-CLOSED: при любой ошибке/недоступности Supabase возвращаем false.
+// Иначе атакующий, способный задосить Supabase или потратить квоту,
+// мог бы отключить anti-replay и подавать повторы.
+// Единственное исключение — env не настроен (фаза bootstrap проекта):
+// возвращаем true, чтобы случайно не сломать прод до того как пользователь
+// успел добавить Supabase credentials.
 export async function markNonceUsed(userId, authDate) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     console.warn('[replay] SUPABASE not configured — skipping anti-replay check');
-    return true;
+    return true; // fail-open ТОЛЬКО для конфиг-провала, не для рантайма
   }
-  if (!userId || !authDate) return true;
+  if (!userId || !authDate) {
+    console.warn(`[replay] missing userId/authDate — rejecting (user=${userId} auth=${authDate})`);
+    return false;
+  }
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/replay_nonces`, {
       method: 'POST',
@@ -55,16 +62,15 @@ export async function markNonceUsed(userId, authDate) {
     });
     if (res.status === 201 || res.status === 204) return true; // первый раз
     if (res.status === 409) {
-      // Postgres unique_violation: эта initData уже использовалась
       console.warn(`[replay] REPLAY DETECTED userId=${userId} auth_date=${authDate}`);
       return false;
     }
-    // Любой другой статус (5xx, 401 итд) — fail-open, не блокируем клиента
-    console.warn('[replay] unexpected status', res.status);
-    return true;
+    // Любой другой статус (5xx, 401, и т.д.) — FAIL CLOSED
+    console.error(`[replay] FAIL-CLOSED: unexpected Supabase status ${res.status} for user=${userId}`);
+    return false;
   } catch (e) {
-    console.error('[replay] Supabase error:', e.message);
-    return true;
+    console.error('[replay] FAIL-CLOSED: Supabase error:', e.message);
+    return false;
   }
 }
 
