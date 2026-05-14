@@ -65,8 +65,10 @@ export async function markNonceUsed(userId, authDate) {
       console.warn(`[replay] REPLAY DETECTED userId=${userId} auth_date=${authDate}`);
       return false;
     }
-    // Любой другой статус (5xx, 401, и т.д.) — FAIL CLOSED
-    console.error(`[replay] FAIL-CLOSED: unexpected Supabase status ${res.status} for user=${userId}`);
+    // Любой другой статус (5xx, 401, и т.д.) — FAIL CLOSED + лог body для отладки
+    let bodyText = '';
+    try { bodyText = await res.text(); } catch {}
+    console.error(`[replay] FAIL-CLOSED: Supabase status=${res.status} body=${bodyText} for user=${userId}`);
     return false;
   } catch (e) {
     console.error('[replay] FAIL-CLOSED: Supabase error:', e.message);
