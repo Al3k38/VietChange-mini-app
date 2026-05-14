@@ -241,6 +241,7 @@ export default async function handler(req, res) {
 
   } catch(e) {
     console.error('Handler error:', e);
-    return res.status(500).json({ ok: false, error: e.message });
+    // Не светим e.message клиенту — детали только в логах.
+    return res.status(500).json({ ok: false, error: 'Internal error' });
   }
 }
