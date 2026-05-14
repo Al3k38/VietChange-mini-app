@@ -1,24 +1,135 @@
 // api/_lib/rates-server.mjs
 // Серверный пересчёт курса/суммы для защиты от подмены клиентом.
 // Логика 1:1 портирована из index.html: getRate + applyRateLogic.
+//
+// Источники курсов (по приоритету):
+//   1) In-memory кэш в Vercel-функции (TTL 60 сек) — самое быстрое.
+//   2) Apps Script (через sheetsGet) — основной источник, fresh из таблицы.
+//   3) Supabase rates_cache (persistent fallback) — если Apps Script лежит
+//      и in-memory пуст (например, после cold start). Возраст ≤ 24ч.
+//   4) Ничего — заявка отклоняется в order.js с 503.
 
 import { sheetsGet } from './sheets.mjs';
 
 const CACHE_TTL_MS = 60_000;
+const FALLBACK_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 часа
+
+const SUPABASE_URL         = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 let _cache = null;
 let _cachedAt = 0;
+let _cacheSource = 'none'; // 'fresh' | 'stale-memory' | 'stale-supabase' | 'none'
+let _cacheUpdatedAt = 0;   // timestamp реальной свежести данных (не кэша)
 
-// ─── ЗАГРУЗКА КУРСОВ С КЭШИРОВАНИЕМ ──────────────────────────
+// ─── ЗАПИСЬ КУРСОВ В SUPABASE (persistent backup) ────────────
+async function persistRatesToSupabase(rates) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/rates_cache`, {
+      method: 'POST',
+      headers: {
+        'apikey':        SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Content-Type':  'application/json',
+        'Prefer':        'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify({
+        id: 1,
+        rates: rates,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  } catch (e) {
+    console.warn('[rates-server] persist to Supabase failed:', e.message);
+  }
+}
+
+// ─── ЧТЕНИЕ КУРСОВ ИЗ SUPABASE (persistent fallback) ─────────
+async function loadRatesFromSupabase() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/rates_cache?id=eq.1&select=rates,updated_at`,
+      {
+        headers: {
+          'apikey':        SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        },
+      },
+    );
+    if (!res.ok) return null;
+    const arr = await res.json();
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    return {
+      rates: arr[0].rates,
+      updatedAt: new Date(arr[0].updated_at).getTime(),
+    };
+  } catch (e) {
+    console.warn('[rates-server] load from Supabase failed:', e.message);
+    return null;
+  }
+}
+
+// ─── ЗАГРУЗКА КУРСОВ С КАСКАДОМ ИСТОЧНИКОВ ───────────────────
+// Возвращает rates-объект (или null если нигде ничего нет).
+// Параллельно обновляет _cacheSource / _cacheUpdatedAt — их забирает
+// getRatesStaleness() для добавления warning'а в сообщение менеджеру.
 export async function getServerRates() {
   const now = Date.now();
-  if (_cache && now - _cachedAt < CACHE_TTL_MS) return _cache;
+
+  // 1) Свежий in-memory кэш
+  if (_cache && now - _cachedAt < CACHE_TTL_MS) {
+    return _cache;
+  }
+
+  // 2) Пробуем Apps Script (основной источник)
   const data = await sheetsGet();
   if (data && data.ok && data.rates) {
     _cache = data.rates;
     _cachedAt = now;
+    _cacheUpdatedAt = now;
+    _cacheSource = 'fresh';
+    // Параллельно дублируем в Supabase для будущих cold starts
+    persistRatesToSupabase(data.rates).catch(() => {});
+    return _cache;
   }
-  return _cache;
+
+  // 3) Apps Script упал — используем in-memory stale если есть
+  if (_cache) {
+    _cacheSource = 'stale-memory';
+    console.warn('[rates-server] Apps Script unavailable — using stale in-memory cache');
+    return _cache;
+  }
+
+  // 4) In-memory пуст (cold start) — пробуем Supabase
+  const fallback = await loadRatesFromSupabase();
+  if (fallback && fallback.rates) {
+    const age = now - fallback.updatedAt;
+    if (age <= FALLBACK_MAX_AGE_MS) {
+      _cache = fallback.rates;
+      _cachedAt = now;
+      _cacheUpdatedAt = fallback.updatedAt;
+      _cacheSource = 'stale-supabase';
+      console.warn(`[rates-server] Apps Script unavailable — using Supabase fallback (age ${Math.floor(age/60000)} min)`);
+      return _cache;
+    } else {
+      console.error(`[rates-server] Supabase fallback too old: ${Math.floor(age/60000)} min > 24h max`);
+    }
+  }
+
+  // 5) Полная неудача
+  _cacheSource = 'none';
+  return null;
+}
+
+// Информация о свежести курсов — для warning'а в сообщении менеджеру.
+export function getRatesStaleness() {
+  return {
+    source: _cacheSource,
+    ageMs: _cacheUpdatedAt ? Date.now() - _cacheUpdatedAt : null,
+    isFallback: _cacheSource === 'stale-supabase' || _cacheSource === 'stale-memory',
+  };
 }
 
 // ─── ПОИСК КУРСА: возвращает МНОЖИТЕЛЬ (amtTo = amtFrom * multiplier) ──
@@ -244,6 +355,9 @@ export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr }) 
   // Округление суммы получения по правилам целевой валюты
   const serverAmtToRounded = roundAmountServer(serverAmtTo, toCode);
 
+  // Информация о свежести курсов (для warning'а менеджеру при fallback'е)
+  const stale = getRatesStaleness();
+
   return {
     verified: true,
     serverRate: dispRateRounded,
@@ -258,5 +372,8 @@ export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr }) 
     clientRateNum,
     fromKey: keys.fromKey,
     toKey: keys.toKey,
+    ratesSource: stale.source,         // 'fresh' | 'stale-memory' | 'stale-supabase'
+    ratesAgeMs: stale.ageMs,
+    isFallback: stale.isFallback,      // true если курс не свежий
   };
 }
