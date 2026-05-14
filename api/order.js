@@ -357,6 +357,9 @@ export default async function handler(req, res) {
         await tgSend(GROUP_ID, errMsg, null);
       }
     } catch(_) {}
-    return res.status(500).json({ ok: false, error: 'Internal error', detail: e.message });
+    // НЕ возвращаем e.message клиенту — может содержать пути файлов,
+    // имена env переменных, URL внутренних сервисов. Детали остаются
+    // только в console.error выше для Vercel логов.
+    return res.status(500).json({ ok: false, error: 'Internal error' });
   }
 }
