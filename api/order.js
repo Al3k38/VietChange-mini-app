@@ -8,6 +8,7 @@ import { sheetsPost } from './_lib/sheets.mjs';
 import { verifyTelegramInitData } from './_lib/verify.mjs';
 import { setCorsHeaders } from './_lib/cors.mjs';
 import { markNonceUsed, getAuthDate } from './_lib/replay.mjs';
+import { checkBlacklist } from './_lib/blacklist.mjs';
 
 const BOT_TOKEN        = process.env.BOT_TOKEN;
 const GROUP_ID         = process.env.GROUP_ID;
@@ -169,6 +170,45 @@ export default async function handler(req, res) {
    d.userId    = verifiedUser.id;
     d.username  = verifiedUser.username ? '@' + verifiedUser.username : (verifiedUser.first_name || 'Клиент');
     d.firstName = verifiedUser.first_name || d.username;
+
+    // ─── BLACKLIST CHECK ─────────────────────────────────────
+    // Проверяем клиента по 4 идентификаторам сразу: userId, телефон,
+    // USDT-адрес, номер карты (в реквизитах могут быть и телефон и карта,
+    // оба передаются в reqs.toPhone). При совпадении — тихий 403 клиенту,
+    // громкий алёрт менеджеру в Risk Check.
+    const blMatch = await checkBlacklist({
+      userId: d.userId,
+      phone:  d.reqs && d.reqs.toPhone,
+      card:   d.reqs && d.reqs.toPhone,   // toPhone может быть номером карты
+      usdt:   d.reqs && d.reqs.usdtAddr,
+    });
+    if (blMatch) {
+      console.warn(`[order] BLACKLISTED userId=${d.userId} type=${blMatch.type} value=${blMatch.value}`);
+      // Алёрт менеджеру (Risk Check топик)
+      if (GROUP_ID && process.env.RISK_THREAD_ID) {
+        const clientLink = `<a href="tg://user?id=${d.userId}">${esc(d.firstName || 'Клиент')}</a>`;
+        const usernamePart = d.username && d.username.startsWith('@') ? ` · ${esc(d.username)}` : '';
+        const alertMsg = [
+          `⛔ <b>БЛЭКЛИСТ — попытка оформить заявку</b>`,
+          `📅 ${nowVN()}`,
+          ``,
+          `<b>Клиент:</b> ${clientLink}${usernamePart}`,
+          `<b>ID:</b> <code>${d.userId}</code>`,
+          ``,
+          `<b>Совпадение по:</b> <code>${esc(blMatch.type)}</code>`,
+          `<b>Значение:</b> <code>${esc(blMatch.value)}</code>`,
+          `<b>Причина:</b> ${esc(blMatch.reason || '—')}`,
+          ``,
+          `<i>Клиент получил «Не удалось оформить заявку. Свяжитесь с поддержкой».</i>`,
+        ].join('\n');
+        await tgSend(GROUP_ID, alertMsg, process.env.RISK_THREAD_ID);
+      }
+      // Тихо отклоняем — клиент не знает что забанен
+      return res.status(403).json({
+        ok: false,
+        error: 'Не удалось оформить заявку. Свяжитесь с поддержкой.',
+      });
+    }
 
     // Anti-replay: одну и ту же initData можно использовать для заявки только один раз.
     // Чтобы оформить вторую — клиент закрывает Mini App и открывает заново.
