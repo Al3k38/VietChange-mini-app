@@ -80,33 +80,42 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'Forbidden' });
   }
 
-  try {
-    const d = req.body;
-    if (!d) return res.status(400).json({ error: 'Invalid data: empty body' });
+  // ─── БЫСТРЫЙ ПАРСИНГ ВХОДА ─────────────────────────────────
+  // PuzzleBot ждёт ответа максимум 5 секунд. Всё что ниже — быстрое
+  // (валидация + парсинг). Дальше отвечаем 200 и продолжаем тяжёлую
+  // работу (визит-lookup, risk-check, Telegram) в фоне.
+  const d = req.body;
+  if (!d) return res.status(400).json({ error: 'Invalid data: empty body' });
 
-    const event = String(d.event || 'start').toLowerCase();
-    console.warn(`[risk-on-start] event=${event} userId=${d.userId || (d.user && d.user.id) || 'unknown'}`);
+  const event = String(d.event || 'start').toLowerCase();
+  console.warn(`[risk-on-start] event=${event} userId=${d.userId || (d.user && d.user.id) || 'unknown'}`);
 
-    let userId, username, firstName, photoUrl = '';
-    if (d.user && d.user.id) {
-      userId = String(d.user.id);
-      username = d.user.username || '';
-      firstName = d.user.first_name || 'Клиент';
-      if (d.user.is_bot === true) return res.status(200).json({ ok: true, ignored: 'bot' });
-      if (d.chat && d.chat.type && d.chat.type !== 'private') {
-        return res.status(200).json({ ok: true, ignored: 'not private chat' });
-      }
-    } else if (d.userId) {
-      userId = String(d.userId);
-      username = d.username || '';
-      firstName = d.firstName || d.name || 'Клиент';
-      photoUrl = d.photoUrl || '';
-    } else {
-      return res.status(400).json({ error: 'Invalid data: missing user info' });
+  let userId, username, firstName, photoUrl = '';
+  if (d.user && d.user.id) {
+    userId = String(d.user.id);
+    username = d.user.username || '';
+    firstName = d.user.first_name || 'Клиент';
+    if (d.user.is_bot === true) return res.status(200).json({ ok: true, ignored: 'bot' });
+    if (d.chat && d.chat.type && d.chat.type !== 'private') {
+      return res.status(200).json({ ok: true, ignored: 'not private chat' });
     }
+  } else if (d.userId) {
+    userId = String(d.userId);
+    username = d.username || '';
+    firstName = d.firstName || d.name || 'Клиент';
+    photoUrl = d.photoUrl || '';
+  } else {
+    return res.status(400).json({ error: 'Invalid data: missing user info' });
+  }
 
-    if (username && !username.startsWith('@')) username = '@' + username;
+  if (username && !username.startsWith('@')) username = '@' + username;
 
+  // ─── ОТВЕЧАЕМ PuzzleBot'у СРАЗУ ─────────────────────────────
+  // Vercel-функция продолжает выполняться после res.status().json() —
+  // мы используем это чтобы PuzzleBot не упирался в 5-сек таймаут.
+  res.status(200).json({ ok: true, async: true });
+
+  try {
     // История клиента
     let isNewClient = true;
     let firstSeen = null;
@@ -133,7 +142,7 @@ export default async function handler(req, res) {
       const recentAlert = await checkRecentAlert(userId);
       if (recentAlert) {
         console.warn(`[/menu] Skip alert for ${userId} — recent alert within 7 days`);
-        return res.status(200).json({ ok: true, event: 'menu', skipped: 'recent_alert' });
+        return;
       }
 
       const risk = await assessRisk(userId, {
@@ -147,7 +156,7 @@ export default async function handler(req, res) {
 
       if (!hasCriticalSignals(risk)) {
         console.warn(`[/menu] No critical signals for ${userId} — no notification`);
-        return res.status(200).json({ ok: true, event: 'menu', sent: false });
+        return;
       }
 
       console.warn(`[/menu] CRITICAL ${userId} | ${risk.summary}`);
@@ -174,13 +183,13 @@ export default async function handler(req, res) {
       const eventLabel = event === 'menu' ? '/menu' : 'mini_app';
       await saveAlert(userId, username, firstName, risk.summary, eventLabel, risk.flags.join(' | '));
 
-      return res.status(200).json({ ok: true, event: 'menu', risk: risk.summary, sent: true });
+      return;
     }
 
     // ─── /start ──────────────────────────────────────────────
     if (!isNewClient) {
       console.warn(`[/start] Existing client ${userId} — no notification`);
-      return res.status(200).json({ ok: true, event: 'start', isNew: false });
+      return;
     }
 
     const risk = await assessRisk(userId, {
@@ -205,7 +214,7 @@ export default async function handler(req, res) {
         datetime: nowVN(),
         platform: 'start',
       });
-      return res.status(200).json({ ok: true, event: 'start', isNew: true, risk: risk.summary, sent: false });
+      return;
     }
 
     const userIdSafe = String(userId);
@@ -237,11 +246,9 @@ export default async function handler(req, res) {
       platform: 'start',
     });
 
-    return res.status(200).json({ ok: true, event: 'start', isNew: true, risk: risk.summary, sent: true });
-
   } catch(e) {
-    console.error('Handler error:', e);
-    // Не светим e.message клиенту — детали только в логах.
-    return res.status(500).json({ ok: false, error: 'Internal error' });
+    // Ответ PuzzleBot'у уже отправлен (200 OK). Здесь только логируем,
+    // res трогать нельзя — повторный send бросит ошибку.
+    console.error('[risk-on-start] async work error:', e);
   }
 }
