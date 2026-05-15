@@ -24,6 +24,10 @@ const ADMIN_BOT_TOKEN      = process.env.ADMIN_BOT_TOKEN;
 const ADMIN_WEBHOOK_SECRET = process.env.ADMIN_WEBHOOK_SECRET;
 const GROUP_ID             = process.env.GROUP_ID;
 const RISK_THREAD_ID       = process.env.RISK_THREAD_ID;
+// BOT_TOKEN (@VietChangeBot) — для getChat запросов чтобы получить username
+// блэклистнутого юзера. @VietChangeBot почти всегда видел его (если он
+// открывал Mini App или писал боту), поэтому Telegram отдаст данные.
+const BOT_TOKEN            = process.env.BOT_TOKEN;
 
 // Список менеджеров читается строго из env ADMIN_USER_IDS (через запятую).
 // Без env список пустой → никто не админ → команды /check возвращают «доступ только менеджерам».
@@ -79,11 +83,34 @@ async function findClientByUsername(username) {
   return data && data.found ? data : null;
 }
 
-// Строит строку «Профиль:» для DM-уведомлений. Если знаем username из
-// нашей БД (Визиты) — даём ссылку https://t.me/USERNAME (всегда кликается).
-// Иначе fallback на tg://user?id=... — может не сработать у админа если
-// бот никогда не видел этого юзера. В таком случае показываем ID копируемо.
+// Telegram Bot API getChat — узнаём актуальные данные юзера (username, имя)
+// через основной бот @VietChangeBot, который наверняка с этим юзером
+// уже общался (Mini App, /start). Возвращает null если бот его не знает.
+async function telegramGetChat_(userId) {
+  if (!BOT_TOKEN || !userId) return null;
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/getChat?chat_id=${userId}`
+    );
+    const data = await res.json();
+    if (data && data.ok && data.result) {
+      return {
+        username:  data.result.username  || null,
+        firstName: data.result.first_name || null,
+        lastName:  data.result.last_name || null,
+      };
+    }
+    return null;
+  } catch(e) {
+    console.warn('[admin] telegramGetChat error:', e.message);
+    return null;
+  }
+}
+
+// Строит строку «Профиль:» для DM-уведомлений с максимально кликабельной
+// ссылкой. Каскад: Sheets БД → Telegram getChat → fallback на tg://.
 async function buildProfileLine_(userId) {
+  // 1) Sheets DB — быстро, без Telegram API
   try {
     const found = await findClientByUserId(userId);
     if (found && found.username) {
@@ -93,8 +120,26 @@ async function buildProfileLine_(userId) {
       }
     }
   } catch(e) { /* skip */ }
-  // Username неизвестен — пытаемся через tg:// схему (может не кликаться)
-  // плюс показываем ID копируемо для ручного поиска.
+
+  // 2) Telegram Bot API getChat через @VietChangeBot — почти всегда знает юзера
+  try {
+    const chat = await telegramGetChat_(userId);
+    if (chat && chat.username) {
+      const u = String(chat.username).replace(/^@/, '').trim();
+      if (u) {
+        return `<b>Профиль:</b> <a href="https://t.me/${encodeURIComponent(u)}">@${escapeHtml(u)}</a>`;
+      }
+    }
+    // Даже без username — покажем имя/фамилию чтобы было понятно кого банить
+    if (chat && chat.firstName) {
+      const fullName = [chat.firstName, chat.lastName].filter(Boolean).join(' ');
+      return `<b>Имя:</b> ${escapeHtml(fullName)}\n` +
+        `<b>Профиль:</b> <a href="tg://user?id=${userId}">открыть в Telegram</a> ` +
+        `<i>(у юзера нет @username — ссылка работает только если у тебя был с ним общий чат)</i>`;
+    }
+  } catch(e) { /* skip */ }
+
+  // 3) Совсем не удалось — старый формат с подсказкой
   return `<b>Профиль:</b> <a href="tg://user?id=${userId}">открыть в Telegram</a> ` +
     `<i>(если не кликается — скопируй ID и найди вручную)</i>`;
 }
