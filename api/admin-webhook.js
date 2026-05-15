@@ -13,6 +13,12 @@
 import { assessRisk, formatRiskBlock } from './risk-check.mjs';
 import { esc as escapeHtml } from './_lib/escape.mjs';
 import { sheetsPost } from './_lib/sheets.mjs';
+import {
+  addToBlacklist,
+  removeFromBlacklist,
+  listBlacklist,
+  checkBlacklist,
+} from './_lib/blacklist.mjs';
 
 const ADMIN_BOT_TOKEN      = process.env.ADMIN_BOT_TOKEN;
 const ADMIN_WEBHOOK_SECRET = process.env.ADMIN_WEBHOOK_SECRET;
@@ -153,6 +159,16 @@ async function handleCheckCommand(message, args) {
 
   console.warn(`[admin /check] manager=${senderId} target=${targetUserId} risk=${risk.summary}`);
 
+  // Дополнительно: проверка blacklist (по userId — единственный идентификатор тут).
+  const blMatch = await checkBlacklist({ userId: targetUserId });
+  let blacklistBlock = '';
+  if (blMatch) {
+    blacklistBlock =
+      `\n\n⛔ <b>В ЧЁРНОМ СПИСКЕ</b>\n` +
+      `<b>Совпадение:</b> ${escapeHtml(blMatch.type)} = <code>${escapeHtml(blMatch.value)}</code>\n` +
+      `<b>Причина:</b> ${escapeHtml(blMatch.reason || '—')}`;
+  }
+
   const usernameLine = targetUsername
     ? `<b>Username:</b> ${escapeHtml(targetUsername.startsWith('@') ? targetUsername : '@' + targetUsername)}\n`
     : '';
@@ -173,7 +189,7 @@ async function handleCheckCommand(message, args) {
   ].filter(Boolean).join('\n');
 
   const riskBlock = formatRiskBlock(risk);
-  const fullMsg = msg + '\n' + riskBlock;
+  const fullMsg = msg + blacklistBlock + '\n' + riskBlock;
 
   if (GROUP_ID && RISK_THREAD_ID) {
     await tgSend(GROUP_ID, fullMsg, RISK_THREAD_ID);
@@ -185,6 +201,164 @@ async function handleCheckCommand(message, args) {
       `Уровень риска: ${risk.emoji} <b>${risk.summary}</b>`,
       threadId, replyToId);
   }
+}
+
+// ─── /blacklist add/remove/list ─────────────────────────────
+async function handleBlacklistCommand(message, args) {
+  const chatId = message.chat.id;
+  const threadId = message.message_thread_id || null;
+  const replyToId = message.message_id;
+  const senderId = String(message.from.id);
+
+  if (!ADMIN_USER_IDS.includes(senderId)) {
+    await tgSend(chatId, '⛔ Команда доступна только менеджерам.', threadId, replyToId);
+    return;
+  }
+
+  const usage = [
+    '<b>Чёрный список:</b>',
+    '<code>/blacklist add user_id 5571369741 причина</code>',
+    '<code>/blacklist add phone +79991234567 причина</code>',
+    '<code>/blacklist add usdt TQR... причина</code>',
+    '<code>/blacklist add card 4276... причина</code>',
+    '<code>/blacklist remove user_id 5571369741</code>',
+    '<code>/blacklist list</code>',
+  ].join('\n');
+
+  const parts = String(args || '').trim().split(/\s+/);
+  const subcmd = (parts[0] || '').toLowerCase();
+
+  if (!subcmd || subcmd === 'help') {
+    await tgSend(chatId, usage, threadId, replyToId);
+    return;
+  }
+
+  if (subcmd === 'list') {
+    const items = await listBlacklist();
+    if (items.length === 0) {
+      await tgSend(chatId, '<i>Чёрный список пуст.</i>', threadId, replyToId);
+      return;
+    }
+    const lines = [`<b>⛔ Чёрный список (${items.length}):</b>`, ''];
+    items.slice(0, 50).forEach((it, i) => {
+      const date = it.created_at ? new Date(it.created_at).toISOString().substring(0, 10) : '';
+      lines.push(
+        `<b>${i + 1}.</b> <code>${escapeHtml(it.identifier_type)}</code> = <code>${escapeHtml(it.identifier_value)}</code>` +
+        (it.reason ? ` · ${escapeHtml(it.reason)}` : '') +
+        (date ? ` <i>(${date})</i>` : '')
+      );
+    });
+    if (items.length > 50) lines.push(``, `<i>… показаны первые 50 из ${items.length}</i>`);
+    await tgSend(chatId, lines.join('\n'), threadId, replyToId);
+    return;
+  }
+
+  if (subcmd === 'add' || subcmd === 'remove') {
+    const type = (parts[1] || '').toLowerCase();
+    const value = parts[2];
+    if (!type || !value) {
+      await tgSend(chatId, '❌ Не хватает аргументов.\n\n' + usage, threadId, replyToId);
+      return;
+    }
+    if (!['user_id', 'phone', 'usdt', 'card'].includes(type)) {
+      await tgSend(chatId,
+        `❌ Неверный тип <code>${escapeHtml(type)}</code>.\n` +
+        `Допустимы: <code>user_id</code>, <code>phone</code>, <code>usdt</code>, <code>card</code>.`,
+        threadId, replyToId);
+      return;
+    }
+
+    if (subcmd === 'add') {
+      const reason = parts.slice(3).join(' ');
+      const result = await addToBlacklist({
+        type, value, reason, addedBy: senderId,
+      });
+      // Сообщение об успешном добавлении (или ошибке)
+      let header;
+      if (result.ok) {
+        console.warn(`[admin /blacklist add] by=${senderId} type=${type} value=${result.normalizedValue}`);
+        header = `✅ Добавлено в чёрный список:\n` +
+          `<code>${escapeHtml(type)}</code> = <code>${escapeHtml(result.normalizedValue)}</code>` +
+          (reason ? `\nПричина: ${escapeHtml(reason)}` : '');
+      } else {
+        header = `❌ ${escapeHtml(result.error)}`;
+      }
+      // Доп. строка про PuzzleBot ban для user_id
+      let puzzleLine = '';
+      if (type === 'user_id' && result.puzzle) {
+        puzzleLine = result.puzzle.ok
+          ? `\n🤖 Заблокирован в PuzzleBot — бот перестанет реагировать.`
+          : `\n⚠️ PuzzleBot ban не сработал: ${escapeHtml(result.puzzle.error)}`;
+      }
+      await tgSend(chatId, header + puzzleLine, threadId, replyToId);
+
+      // Личные уведомления админам — для блока в их личных аккаунтах
+      if (result.ok && type === 'user_id') {
+        const targetId = result.normalizedValue;
+        const dmText = [
+          `⛔ <b>Новый юзер в чёрном списке</b>`,
+          ``,
+          `<b>ID:</b> <code>${targetId}</code>`,
+          `<b>Профиль:</b> <a href="tg://user?id=${targetId}">открыть в Telegram</a>`,
+          reason ? `<b>Причина:</b> ${escapeHtml(reason)}` : null,
+          ``,
+          `<b>Заблокируй у себя в личном аккаунте:</b>`,
+          `1. Тыкни на ссылку «открыть в Telegram» выше`,
+          `2. В профиле юзера жми <b>Заблокировать</b>`,
+        ].filter(Boolean).join('\n');
+        for (const adminId of ADMIN_USER_IDS) {
+          try {
+            await tgSend(adminId, dmText);
+          } catch(e) {
+            console.warn(`[admin /blacklist add] DM to admin ${adminId} failed:`, e.message);
+          }
+        }
+      }
+      return;
+    }
+
+    if (subcmd === 'remove') {
+      const result = await removeFromBlacklist({ type, value });
+      let header;
+      if (result.ok) {
+        console.warn(`[admin /blacklist remove] by=${senderId} type=${type} value=${result.normalizedValue}`);
+        header = `✅ Удалено из чёрного списка:\n` +
+          `<code>${escapeHtml(type)}</code> = <code>${escapeHtml(result.normalizedValue)}</code>`;
+      } else {
+        header = `❌ ${escapeHtml(result.error)}`;
+      }
+      let puzzleLine = '';
+      if (type === 'user_id' && result.puzzle) {
+        puzzleLine = result.puzzle.ok
+          ? `\n🤖 Разблокирован в PuzzleBot — бот снова реагирует.`
+          : `\n⚠️ PuzzleBot unban не сработал: ${escapeHtml(result.puzzle.error)}`;
+      }
+      await tgSend(chatId, header + puzzleLine, threadId, replyToId);
+
+      // Личное уведомление админам — напомнить разблокировать у себя
+      if (result.ok && type === 'user_id') {
+        const targetId = result.normalizedValue;
+        const dmText = [
+          `♻️ <b>Юзер удалён из чёрного списка</b>`,
+          ``,
+          `<b>ID:</b> <code>${targetId}</code>`,
+          `<b>Профиль:</b> <a href="tg://user?id=${targetId}">открыть в Telegram</a>`,
+          ``,
+          `Если ты раньше блокировал его у себя в личке — можешь разблокировать.`,
+        ].join('\n');
+        for (const adminId of ADMIN_USER_IDS) {
+          try {
+            await tgSend(adminId, dmText);
+          } catch(e) {
+            console.warn(`[admin /blacklist remove] DM to admin ${adminId} failed:`, e.message);
+          }
+        }
+      }
+      return;
+    }
+  }
+
+  await tgSend(chatId, `❌ Неизвестная подкоманда <code>${escapeHtml(subcmd)}</code>.\n\n` + usage, threadId, replyToId);
 }
 
 async function handleHelpCommand(message) {
@@ -199,6 +373,14 @@ async function handleHelpCommand(message) {
     ``,
     `<b>/check @username</b> — проверить по username (только если клиент в нашей БД)`,
     `Пример: <code>/check @SashaCashh</code>`,
+    ``,
+    `<b>⛔ Чёрный список</b>`,
+    `<code>/blacklist add user_id 5571369741 причина</code>`,
+    `<code>/blacklist add phone +79991234567 причина</code>`,
+    `<code>/blacklist add usdt TQR... причина</code>`,
+    `<code>/blacklist add card 4276... причина</code>`,
+    `<code>/blacklist remove user_id 5571369741</code>`,
+    `<code>/blacklist list</code>`,
     ``,
     `<b>/help</b> — показать это сообщение`,
     ``,
@@ -244,6 +426,8 @@ export default async function handler(req, res) {
 
     if (command === 'check') {
       await handleCheckCommand(message, args);
+    } else if (command === 'blacklist') {
+      await handleBlacklistCommand(message, args);
     } else if (command === 'help' || command === 'start') {
       await handleHelpCommand(message);
     }
