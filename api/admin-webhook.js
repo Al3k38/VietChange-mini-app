@@ -79,6 +79,26 @@ async function findClientByUsername(username) {
   return data && data.found ? data : null;
 }
 
+// Строит строку «Профиль:» для DM-уведомлений. Если знаем username из
+// нашей БД (Визиты) — даём ссылку https://t.me/USERNAME (всегда кликается).
+// Иначе fallback на tg://user?id=... — может не сработать у админа если
+// бот никогда не видел этого юзера. В таком случае показываем ID копируемо.
+async function buildProfileLine_(userId) {
+  try {
+    const found = await findClientByUserId(userId);
+    if (found && found.username) {
+      const u = String(found.username).replace(/^@/, '').trim();
+      if (u) {
+        return `<b>Профиль:</b> <a href="https://t.me/${encodeURIComponent(u)}">@${escapeHtml(u)}</a>`;
+      }
+    }
+  } catch(e) { /* skip */ }
+  // Username неизвестен — пытаемся через tg:// схему (может не кликаться)
+  // плюс показываем ID копируемо для ручного поиска.
+  return `<b>Профиль:</b> <a href="tg://user?id=${userId}">открыть в Telegram</a> ` +
+    `<i>(если не кликается — скопируй ID и найди вручную)</i>`;
+}
+
 async function getClientHistory(userId, username, firstName) {
   if (!userId) return { firstSeen: null, nameChanges: 0, usernameChanges: 0 };
   const data = await sheetsPost({
@@ -295,15 +315,16 @@ async function handleBlacklistCommand(message, args) {
       // Личные уведомления админам — для блока в их личных аккаунтах
       if (result.ok && type === 'user_id') {
         const targetId = result.normalizedValue;
+        const profileLine = await buildProfileLine_(targetId);
         const dmText = [
           `⛔ <b>Новый юзер в чёрном списке</b>`,
           ``,
           `<b>ID:</b> <code>${targetId}</code>`,
-          `<b>Профиль:</b> <a href="tg://user?id=${targetId}">открыть в Telegram</a>`,
+          profileLine,
           reason ? `<b>Причина:</b> ${escapeHtml(reason)}` : null,
           ``,
           `<b>Заблокируй у себя в личном аккаунте:</b>`,
-          `1. Тыкни на ссылку «открыть в Telegram» выше`,
+          `1. Открой профиль (см. ссылку выше)`,
           `2. В профиле юзера жми <b>Заблокировать</b>`,
         ].filter(Boolean).join('\n');
         for (const adminId of ADMIN_USER_IDS) {
@@ -338,11 +359,12 @@ async function handleBlacklistCommand(message, args) {
       // Личное уведомление админам — напомнить разблокировать у себя
       if (result.ok && type === 'user_id') {
         const targetId = result.normalizedValue;
+        const profileLine = await buildProfileLine_(targetId);
         const dmText = [
           `♻️ <b>Юзер удалён из чёрного списка</b>`,
           ``,
           `<b>ID:</b> <code>${targetId}</code>`,
-          `<b>Профиль:</b> <a href="tg://user?id=${targetId}">открыть в Telegram</a>`,
+          profileLine,
           ``,
           `Если ты раньше блокировал его у себя в личке — можешь разблокировать.`,
         ].join('\n');
