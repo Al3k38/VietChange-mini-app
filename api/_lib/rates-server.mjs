@@ -288,9 +288,15 @@ function formatNum(n) {
 
 // Округление СУММЫ по правилам валюты — порт roundAmount из index.html.
 //   RUB: до 50, USDT: до 0.1, VND: до 1000, KZT: до 100, USD/EUR: до 1.
-function roundAmountServer(amount, currency) {
+// method='Банкомат' + toCode='VND' → особое правило: до 100 000
+// (банкоматы выдают только купюры по 100k VND).
+function roundAmountServer(amount, currency, method) {
   if (!amount || !isFinite(amount)) return 0;
   const c = String(currency || '').replace('_b', '').replace('_c', '');
+  // ATM-специфичное округление для VND
+  if (method === 'Банкомат' && c === 'VND') {
+    return Math.round(amount / 100000) * 100000;
+  }
   if (c === 'RUB')                  return Math.round(amount / 50) * 50;
   if (c === 'USDT')                 return Math.round(amount * 10) / 10;
   if (c === 'VND')                  return Math.round(amount / 1000) * 1000;
@@ -301,7 +307,7 @@ function roundAmountServer(amount, currency) {
 
 // ─── ГЛАВНАЯ ФУНКЦИЯ ─────────────────────────────────────────
 // Возвращает результат пересчёта или причину отказа.
-export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr }) {
+export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr, method }) {
   const rates = await getServerRates();
   if (!rates) return { verified: false, reason: 'rates_unavailable' };
 
@@ -352,8 +358,9 @@ export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr }) 
     mismatch = mismatchPct > 0.5;
   }
 
-  // Округление суммы получения по правилам целевой валюты
-  const serverAmtToRounded = roundAmountServer(serverAmtTo, toCode);
+  // Округление суммы получения по правилам целевой валюты + метода
+  // (для Банкомат+VND — кратно 100к, иначе обычные правила)
+  const serverAmtToRounded = roundAmountServer(serverAmtTo, toCode, method);
 
   // Информация о свежести курсов (для warning'а менеджеру при fallback'е)
   const stale = getRatesStaleness();
