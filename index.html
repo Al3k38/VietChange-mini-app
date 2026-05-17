@@ -621,8 +621,9 @@ async function refreshRates(silent) {
     if (newRates && Object.keys(newRates).length > 0) {
       RATES = newRates;
       ratesLoadedAt = new Date();
-      // Перерасчёт текущей пары
-      onAmountChange('from');
+      // Перерасчёт текущей пары — от поля которое юзер вводил последним,
+      // чтобы сохранить его интент (а не всегда от FROM как было раньше).
+      onAmountChange(state.lastEditedField || 'from');
     } else if (!silent) {
       // Тихо игнорируем ошибку при автообновлении
       console.warn('Ошибка обновления курсов');
