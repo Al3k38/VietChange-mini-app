@@ -307,7 +307,11 @@ function roundAmountServer(amount, currency, method) {
 
 // ─── ГЛАВНАЯ ФУНКЦИЯ ─────────────────────────────────────────
 // Возвращает результат пересчёта или причину отказа.
-export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr, method }) {
+//   method      — для method-specific округления (ATM → 100к VND).
+//   clientAmtTo — сумма получения от клиента. Если в пределах 1% от
+//                 серверного расчёта — доверяем клиенту (сохраняем интент:
+//                 «хочу получить ровно 10М VND»). Иначе override на сервер.
+export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr, method, clientAmtTo }) {
   const rates = await getServerRates();
   if (!rates) return { verified: false, reason: 'rates_unavailable' };
 
@@ -360,7 +364,29 @@ export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr, me
 
   // Округление суммы получения по правилам целевой валюты + метода
   // (для Банкомат+VND — кратно 100к, иначе обычные правила)
-  const serverAmtToRounded = roundAmountServer(serverAmtTo, toCode, method);
+  const serverAmtToRoundedBase = roundAmountServer(serverAmtTo, toCode, method);
+
+  // Если клиент прислал свой amtTo, и он в пределах 1% от серверного
+  // расчёта — доверяем клиенту. Это позволяет сохранить «красивые» суммы
+  // которые юзер хотел получить (например ровно 10 000 000 VND вместо
+  // server-recalculated 9 995 000 после RUB-округления). 1% — это «честная»
+  // разница которая возникает из-за разной логики округления RUB до 50.
+  // Атака подмены (например в 2 раза) сюда не пройдёт.
+  let serverAmtToRounded = serverAmtToRoundedBase;
+  let amtToTrustedClient = false;
+  if (clientAmtTo) {
+    const clientAmtToNum = parseFloat(
+      String(clientAmtTo).replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
+    ) || 0;
+    if (clientAmtToNum > 0 && serverAmtTo > 0) {
+      const diff = Math.abs(serverAmtTo - clientAmtToNum) / serverAmtTo;
+      if (diff < 0.01) {
+        // Разница < 1% — клиентский расчёт нормальный, используем его
+        serverAmtToRounded = clientAmtToNum;
+        amtToTrustedClient = true;
+      }
+    }
+  }
 
   // Информация о свежести курсов (для warning'а менеджеру при fallback'е)
   const stale = getRatesStaleness();
