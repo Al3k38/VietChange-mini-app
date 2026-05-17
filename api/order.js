@@ -235,6 +235,7 @@ export default async function handler(req, res) {
         toCode:   d.toCode,
         clientRateStr: d.rate,
         method:   d.method,  // нужно для ATM-округления VND до 100к
+        clientAmtTo: d.amtTo, // tolerance check: уважаем клиента если разница <1%
       });
     } catch (e) {
       console.error('[order] recalcOrder threw:', e);
