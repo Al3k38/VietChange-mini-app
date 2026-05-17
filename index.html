@@ -980,6 +980,12 @@ let state = {
   amountFromRaw: 0, amountToRaw: 0,
   method: '', date: 'today', timeSlot: 0,
   customDate: '',
+  // Какое поле юзер вводил последним вручную ('from' или 'to').
+  // При смене валюты (onPairChange / swapCurrencies) используем это
+  // как «источник» чтобы сохранить интент клиента и пересчитать
+  // ПРОТИВОПОЛОЖНОЕ поле. Без этого баг: ввёл 10M VND, поменял валюту →
+  // калькулятор брал уже посчитанные 30850 RUB как «новый ввод».
+  lastEditedField: 'from',
 };
 
 // ─── INIT ─────────────────────────────────────────────────────
@@ -1117,7 +1123,9 @@ function onPairChange() {
   document.getElementById('extra-to').classList.toggle('hidden', !extraTo);
   document.getElementById('extra-from-bank-wrap').classList.toggle('hidden', state.from !== 'OTHER_b');
   document.getElementById('extra-to-bank-wrap').classList.toggle('hidden', state.to !== 'OTHER_b');
-  onAmountChange('from');
+  // Пересчитываем от поля которое юзер последним вводил вручную —
+  // сохраняем его интент при смене валюты. Если ничего ещё не вводил → 'from' по умолчанию.
+  onAmountChange(state.lastEditedField || 'from');
   updateMethods();
   updateRequisites();
   checkSubmitReady();
@@ -1125,6 +1133,11 @@ function onPairChange() {
 
 // ─── AMOUNT CHANGE ────────────────────────────────────────────
 function onAmountChange(source) {
+  // Если юзер реально что-то ввёл (а не системный пересчёт от смены метода) —
+  // запоминаем какое поле, чтобы при последующей смене валют сохранить интент.
+  if (source === 'from' || source === 'to') {
+    state.lastEditedField = source;
+  }
   const from = state.from, to = state.to;
   const isOther = from.startsWith('OTHER') || to.startsWith('OTHER');
   if (isOther) {
@@ -1319,8 +1332,29 @@ function onAmountChange(source) {
 function swapCurrencies() {
   const sf = document.getElementById('sel-from');
   const st = document.getElementById('sel-to');
-  const tmp = sf.value;
-  sf.value = st.value; st.value = tmp;
+  const tmpSel = sf.value;
+  sf.value = st.value; st.value = tmpSel;
+
+  // Меняем местами и сами значения инпутов — после swap то что было
+  // в FROM (например 30850 RUB) теперь в TO (как 30850 новой валюты).
+  // Иначе пользователь получает странное поведение когда после swap
+  // числа остались на своих местах, но валюты сменились.
+  const inFrom = document.getElementById('input-from');
+  const inTo = document.getElementById('input-to');
+  const tmpVal = inFrom.value;
+  inFrom.value = inTo.value;
+  inTo.value = tmpVal;
+
+  // Raw-значения тоже меняем местами
+  const tmpRaw = state.amountFromRaw;
+  state.amountFromRaw = state.amountToRaw;
+  state.amountToRaw = tmpRaw;
+
+  // Инвертируем lastEditedField — то поле в которое юзер вводил
+  // тоже сменило сторону
+  if (state.lastEditedField === 'from') state.lastEditedField = 'to';
+  else if (state.lastEditedField === 'to') state.lastEditedField = 'from';
+
   onPairChange();
 }
 
