@@ -167,7 +167,7 @@ export default async function handler(req, res) {
       console.warn('Invalid initData, request rejected');
       return res.status(403).json({ error: 'Forbidden: invalid signature' });
     }
-   d.userId    = verifiedUser.id;
+    d.userId    = verifiedUser.id;
     d.username  = verifiedUser.username ? '@' + verifiedUser.username : (verifiedUser.first_name || 'Клиент');
     d.firstName = verifiedUser.first_name || d.username;
 
@@ -210,8 +210,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // Anti-replay: одну и ту же initData можно использовать для заявки только один раз.
-    // Чтобы оформить вторую — клиент закрывает Mini App и открывает заново.
+    // Anti-replay: одну и ту же initData можно использовать для оформления заявки
+    // только один раз. Чтобы оформить вторую — клиент закрывает Mini App и открывает заново
+    // (Telegram сгенерирует новую подпись с новым auth_date).
     const authDate = getAuthDate(d.initData);
     const firstUse = await markNonceUsed(d.userId, authDate);
     if (!firstUse) {
@@ -234,8 +235,9 @@ export default async function handler(req, res) {
         fromCode: d.fromCode,
         toCode:   d.toCode,
         clientRateStr: d.rate,
-        method:   d.method,  // нужно для ATM-округления VND до 100к
-        clientAmtTo: d.amtTo, // tolerance check: уважаем клиента если разница <1%
+        method:   d.method,    // ATM-округление VND до 100к
+        clientAmtTo: d.amtTo,  // безопасность + direction='to'
+        direction: d.direction, // 'from' | 'to' — какое поле юзер вводил
       });
     } catch (e) {
       console.error('[order] recalcOrder threw:', e);
@@ -243,11 +245,15 @@ export default async function handler(req, res) {
 
     if (serverRecalc && serverRecalc.verified) {
       rubEquiv = serverRecalc.rubEquiv || 0;
-      // Подменяем клиентские значения серверными — менеджер видит правду
+      // Подменяем клиентские значения серверными — менеджер видит правду.
+      // Server теперь direction-aware: считает в нужную сторону и обе суммы
+      // (amtFrom и amtTo) приходят согласованными.
       const clientRateOriginal = d.rate;
       const clientAmtToOriginal = d.amtTo;
-      d.rate  = serverRecalc.serverRateStr;
-      d.amtTo = serverRecalc.serverAmtToFormatted;
+      const clientAmtFromOriginal = d.amtFrom;
+      d.rate    = serverRecalc.serverRateStr;
+      d.amtTo   = serverRecalc.serverAmtToFormatted;
+      d.amtFrom = serverRecalc.serverAmtFromFormatted;
 
       if (serverRecalc.mismatch) {
         // Не отклоняем заявку (UX), но явно подсвечиваем менеджеру
@@ -259,6 +265,19 @@ export default async function handler(req, res) {
           `   клиент видел: <code>${esc(clientRateOriginal)}</code>\n` +
           `   клиент сумму: <code>${esc(clientAmtToOriginal)}</code>\n` +
           `   сервер пересчитал по актуальному курсу.`;
+      }
+
+      // Если суммы клиента и сервера расходятся > 1% (даже после
+      // direction-aware пересчёта) — это либо подмена либо большой
+      // cache-flux курсов. Подсвечиваем менеджеру.
+      if (serverRecalc.amountMismatch) {
+        console.warn(
+          `[order] AMOUNT MISMATCH userId=${d.userId} pct=${serverRecalc.amountMismatchPct}%`
+        );
+        mismatchFlag = (mismatchFlag || '') +
+          `\n❗ <b>Расхождение сумм (${serverRecalc.amountMismatchPct}%):</b>\n` +
+          `   клиент: ${esc(clientAmtFromOriginal)} → ${esc(clientAmtToOriginal)}\n` +
+          `   сервер: ${esc(serverRecalc.serverAmtFromFormatted)} → ${esc(serverRecalc.serverAmtToFormatted)}`;
       }
 
       // Если курс из резервного хранилища (Apps Script был недоступен) —
