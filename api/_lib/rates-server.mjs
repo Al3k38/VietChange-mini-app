@@ -305,22 +305,49 @@ function roundAmountServer(amount, currency, method) {
   return Math.round(amount * 100) / 100;
 }
 
+// Парсер русского формата чисел (используется для amtFrom/amtTo от клиента).
+function parseRuNum(s) {
+  return parseFloat(
+    String(s ?? '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
+  ) || 0;
+}
+
 // ─── ГЛАВНАЯ ФУНКЦИЯ ─────────────────────────────────────────
 // Возвращает результат пересчёта или причину отказа.
-//   method      — для method-specific округления (ATM → 100к VND).
-//   clientAmtTo — сумма получения от клиента. Если в пределах 1% от
-//                 серверного расчёта — доверяем клиенту (сохраняем интент:
-//                 «хочу получить ровно 10М VND»). Иначе override на сервер.
-export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr, method, clientAmtTo }) {
+//
+// Архитектура direction-aware: клиент шлёт `direction` = какое поле юзер
+// вводил последним вручную ('from' или 'to'). Сервер реплицирует ту же
+// логику что и клиент — считает от того же поля. Это устраняет ошибку
+// округления при разнонаправленном пересчёте.
+//
+//   direction='from': PRIMARY = amtFrom. Сервер считает TO = FROM × rate,
+//                     применяет округление по toCode (+ ATM если метод).
+//   direction='to':   PRIMARY = clientAmtTo. Сервер считает FROM = TO / rate,
+//                     применяет округление по fromCode.
+//
+// Если direction отсутствует — fallback на 'from' (старая логика).
+//
+// Параметры:
+//   method      — для ATM-округления VND (кратно 100к)
+//   clientAmtTo — сумма получения от клиента (для direction='to' и для verify)
+//   direction   — 'from' | 'to' | undefined
+export async function recalcOrder({
+  amtFrom, fromCode, toCode, clientRateStr,
+  method, clientAmtTo, direction,
+}) {
   const rates = await getServerRates();
   if (!rates) return { verified: false, reason: 'rates_unavailable' };
 
-  // Парсинг по русскому формату: точка — разделитель тысяч, запятая — десятичный.
-  // Совпадает с Apps Script parseAmount. "77.800" → 77800, "10,5" → 10.5
-  const amtFromNum = parseFloat(
-    String(amtFrom || '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
-  ) || 0;
-  if (amtFromNum <= 0) return { verified: false, reason: 'invalid_amount' };
+  // Парсинг сумм по русскому формату.
+  const amtFromNum = parseRuNum(amtFrom);
+  const clientAmtToNum = parseRuNum(clientAmtTo);
+
+  const useToAsPrimary = direction === 'to' && clientAmtToNum > 0;
+
+  // Хотя бы один источник должен быть валиден
+  if (!useToAsPrimary && amtFromNum <= 0) {
+    return { verified: false, reason: 'invalid_amount' };
+  }
 
   const keys = resolvePairKeys(rates, fromCode, toCode);
   if (!keys) return { verified: false, reason: 'pair_not_found', amtFromNum };
@@ -330,15 +357,39 @@ export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr, me
     return { verified: false, reason: 'rate_invalid', amtFromNum };
   }
 
-  const rubEquiv = getRubEquivServer(amtFromNum, fromCode, rates);
+  // Для подсчёта рублёвого эквивалента (нужен для applyRateLogic).
+  // Используем то, что есть: amtFrom если он валидный, иначе примерно
+  // считаем из TO/baseMul (без бонусов — baseMul без сетки).
+  const refAmtFrom = amtFromNum > 0 ? amtFromNum : (clientAmtToNum / baseMul);
+  const rubEquiv = getRubEquivServer(refAmtFrom, fromCode, rates);
+
   const { rate: appliedMul, note } = applyRateLogicServer(
     baseMul, rubEquiv, keys.fromKey, keys.toKey, rates
   );
 
-  // amtTo считается всегда умножением (баз. сетка возвращает множитель)
-  const serverAmtTo = amtFromNum * appliedMul;
+  // ─── РАСЧЁТ В НУЖНУЮ СТОРОНУ ────────────────────────────
+  let finalAmtFrom, finalAmtTo;
 
-  // Для отображения учитываем isInverted
+  if (useToAsPrimary) {
+    // PRIMARY: TO. ATM-округление для VND (если применимо).
+    let primaryTo = clientAmtToNum;
+    if (method === 'Банкомат' && (toCode === 'VND' || toCode === 'VND_b')) {
+      primaryTo = Math.round(primaryTo / 100000) * 100000;
+    }
+    // SECONDARY: FROM = TO / rate, округлено по правилам fromCode
+    const fromRaw = primaryTo / appliedMul;
+    const fromRounded = roundAmountServer(fromRaw, fromCode);
+    finalAmtFrom = fromRounded;
+    finalAmtTo = primaryTo;
+  } else {
+    // PRIMARY: FROM. SECONDARY: TO = FROM × rate, округлено
+    const toRaw = amtFromNum * appliedMul;
+    const toRounded = roundAmountServer(toRaw, toCode, method);
+    finalAmtFrom = amtFromNum;
+    finalAmtTo = toRounded;
+  }
+
+  // ─── ОТОБРАЖЕНИЕ КУРСА ──────────────────────────────────
   const inv = isInverted(rates, keys.fromKey, keys.toKey);
   let dispRate, dispFrom, dispTo;
   if (inv) {
@@ -353,7 +404,7 @@ export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr, me
   const dispRateRounded = roundDisplayRate(dispRate);
   const serverRateStr = `1 ${dispFrom} = ${formatNum(dispRateRounded)} ${dispTo}`;
 
-  // Сравнение с тем, что прислал клиент
+  // ─── ВЕРИФИКАЦИЯ КУРСА ──────────────────────────────────
   const clientRateNum = parseClientRateString(clientRateStr);
   let mismatch = false;
   let mismatchPct = 0;
@@ -362,51 +413,47 @@ export async function recalcOrder({ amtFrom, fromCode, toCode, clientRateStr, me
     mismatch = mismatchPct > 0.5;
   }
 
-  // Округление суммы получения по правилам целевой валюты + метода
-  // (для Банкомат+VND — кратно 100к, иначе обычные правила)
-  const serverAmtToRoundedBase = roundAmountServer(serverAmtTo, toCode, method);
-
-  // Если клиент прислал свой amtTo, и он в пределах 1% от серверного
-  // расчёта — доверяем клиенту. Это позволяет сохранить «красивые» суммы
-  // которые юзер хотел получить (например ровно 10 000 000 VND вместо
-  // server-recalculated 9 995 000 после RUB-округления). 1% — это «честная»
-  // разница которая возникает из-за разной логики округления RUB до 50.
-  // Атака подмены (например в 2 раза) сюда не пройдёт.
-  let serverAmtToRounded = serverAmtToRoundedBase;
-  let amtToTrustedClient = false;
-  if (clientAmtTo) {
-    const clientAmtToNum = parseFloat(
-      String(clientAmtTo).replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
-    ) || 0;
-    if (clientAmtToNum > 0 && serverAmtTo > 0) {
-      const diff = Math.abs(serverAmtTo - clientAmtToNum) / serverAmtTo;
-      if (diff < 0.01) {
-        // Разница < 1% — клиентский расчёт нормальный, используем его
-        serverAmtToRounded = clientAmtToNum;
-        amtToTrustedClient = true;
-      }
-    }
+  // ─── ВЕРИФИКАЦИЯ AMOUNT (safety net 1% — для cache-flux) ─
+  // Если клиент прислал противоположное поле, проверяем что оно близко
+  // к серверному. Это страховка от случая когда курсы успели измениться
+  // между client-load и submit (60-сек cache).
+  let amountMismatch = false;
+  let amountMismatchPct = 0;
+  if (useToAsPrimary && amtFromNum > 0) {
+    // verify amtFromNum vs finalAmtFrom
+    const diff = Math.abs(amtFromNum - finalAmtFrom) / Math.max(finalAmtFrom, 1);
+    amountMismatchPct = diff * 100;
+    amountMismatch = diff > 0.01;
+  } else if (!useToAsPrimary && clientAmtToNum > 0) {
+    // verify clientAmtToNum vs finalAmtTo
+    const diff = Math.abs(clientAmtToNum - finalAmtTo) / Math.max(finalAmtTo, 1);
+    amountMismatchPct = diff * 100;
+    amountMismatch = diff > 0.01;
   }
 
-  // Информация о свежести курсов (для warning'а менеджеру при fallback'е)
   const stale = getRatesStaleness();
 
   return {
     verified: true,
     serverRate: dispRateRounded,
     serverRateStr,
-    serverAmtTo: serverAmtToRounded,
-    serverAmtToFormatted: formatNum(serverAmtToRounded),
-    serverAmtFromNum: amtFromNum,
+    serverAmtTo: finalAmtTo,
+    serverAmtToFormatted: formatNum(finalAmtTo),
+    serverAmtFrom: finalAmtFrom,
+    serverAmtFromFormatted: formatNum(finalAmtFrom),
+    serverAmtFromNum: finalAmtFrom,
     rubEquiv,
     note,
     mismatch,
     mismatchPct: Number(mismatchPct.toFixed(2)),
+    amountMismatch,
+    amountMismatchPct: Number(amountMismatchPct.toFixed(2)),
     clientRateNum,
+    direction: useToAsPrimary ? 'to' : 'from',
     fromKey: keys.fromKey,
     toKey: keys.toKey,
-    ratesSource: stale.source,         // 'fresh' | 'stale-memory' | 'stale-supabase'
+    ratesSource: stale.source,
     ratesAgeMs: stale.ageMs,
-    isFallback: stale.isFallback,      // true если курс не свежий
+    isFallback: stale.isFallback,
   };
 }
