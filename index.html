@@ -1937,6 +1937,10 @@ async function submitOrder() {
     location: d.location || '',
     comment: d.comment || '',
     reqs: reqsOut,
+    // direction = какое поле юзер вводил последним вручную ('from'|'to').
+    // Сервер использует это чтобы реплицировать клиентскую логику расчёта
+    // в нужную сторону — без разницы в округлении между client/server.
+    direction: state.lastEditedField || 'from',
   };
 
   let orderNum = '';
