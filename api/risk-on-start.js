@@ -251,7 +251,6 @@ export default async function handler(req, res) {
       platform: 'start',
     });
     res.status(200).json({ ok: true, alert: 'sent' });
-  } catch(e) {
 
   } catch(e) {
     console.error('[risk-on-start] async work error:', e);
