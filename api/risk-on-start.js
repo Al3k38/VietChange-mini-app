@@ -21,10 +21,15 @@ function nowVN() {
 async function puzzleSetVariable(userId, variableName, value) {
   if (!PUZZLEBOT_TOKEN || !userId || !variableName) return { ok: false };
   try {
+    // PuzzleBot evaluates `expression` as a formula (2+2, $VAR$, "text").
+    // Wrap value in double quotes + escape inner backslashes/quotes —
+    // иначе многострочный HTML с эмодзи валится с «Variable evaluate exception!».
+    const escapedValue = String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const expression = `"${escapedValue}"`;
     const url = `https://api.puzzlebot.top/?token=${PUZZLEBOT_TOKEN}`
       + `&method=variableChange`
       + `&variable=${encodeURIComponent(variableName)}`
-      + `&expression=${encodeURIComponent(value)}`
+      + `&expression=${encodeURIComponent(expression)}`
       + `&user_id=${userId}`;
     const res = await fetch(url);
     const data = await res.json().catch(() => ({}));
