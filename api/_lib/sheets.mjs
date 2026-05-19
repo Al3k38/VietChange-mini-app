@@ -6,6 +6,19 @@
 const APPS_SCRIPT_URL    = process.env.APPS_SCRIPT_URL;
 const APPS_SCRIPT_SECRET = process.env.APPS_SCRIPT_SECRET;
 
+// Fetch с таймаутом (Apps Script иногда висит — без таймаута функция
+// Vercel-а ждёт до своего лимита 10 сек). Возвращает Response или бросает
+// AbortError при таймауте.
+async function fetchWithTimeout(url, options, timeoutMs = 5000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ─── POST → doPost ────────────────────────────────────────────
 // Возвращает распарсенный JSON или null (при сетевой/JSON-ошибке).
 // Сохраняет совместимость с прошлым контрактом «json или undefined».
@@ -14,22 +27,30 @@ export async function sheetsPost(payload) {
   if (!APPS_SCRIPT_SECRET) {
     console.error('[sheets] APPS_SCRIPT_SECRET is not set — request will be rejected by Apps Script');
   }
-  try {
-    const res = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload, secret: APPS_SCRIPT_SECRET }),
-      redirect: 'follow',
-    });
-    if (!res.ok) {
-      console.warn('[sheets] post non-OK status:', res.status);
-      return null;
+  const opts = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, secret: APPS_SCRIPT_SECRET }),
+    redirect: 'follow',
+  };
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetchWithTimeout(APPS_SCRIPT_URL, opts, 5000);
+      if (!res.ok) {
+        console.warn(`[sheets] post non-OK status: ${res.status} (attempt ${attempt}/2)`);
+        if (attempt === 2) return null;
+        await new Promise(r => setTimeout(r, 500));
+        continue;
+      }
+      try { return await res.json(); } catch { return null; }
+    } catch (e) {
+      const reason = e.name === 'AbortError' ? 'timeout (5s)' : e.message;
+      console.error(`[sheets] post failed (attempt ${attempt}/2): ${reason}`);
+      if (attempt === 2) return null;
+      await new Promise(r => setTimeout(r, 500));
     }
-    try { return await res.json(); } catch { return null; }
-  } catch (e) {
-    console.error('[sheets] post failed:', e.message);
-    return null;
   }
+  return null;
 }
 
 // ─── Получение курсов (для /api/rates и серверного recalcOrder) ───
