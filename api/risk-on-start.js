@@ -256,3 +256,4 @@ export default async function handler(req, res) {
     console.error('[risk-on-start] async work error:', e);
     if (!res.headersSent) res.status(500).json({ error: 'internal' });
   }
+}
