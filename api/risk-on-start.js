@@ -113,7 +113,7 @@ export default async function handler(req, res) {
   // ─── ОТВЕЧАЕМ PuzzleBot'у СРАЗУ ─────────────────────────────
   // Vercel-функция продолжает выполняться после res.status().json() —
   // мы используем это чтобы PuzzleBot не упирался в 5-сек таймаут.
-  res.status(200).json({ ok: true, async: true });
+  // res.status(200).json({ ok: true, async: true });
 
   try {
     // История клиента
