@@ -160,6 +160,7 @@ export default async function handler(req, res) {
       }
 
       console.warn(`[/menu] CRITICAL ${userId} | ${risk.summary}`);
+      console.warn(`[/menu] env check: GROUP_ID=${!!GROUP_ID} RISK_THREAD_ID=${!!RISK_THREAD_ID} BOT_TOKEN=${!!BOT_TOKEN}`);
 
       const userIdSafe = String(userId);
       const clientLink = `<a href="tg://user?id=${userIdSafe}">${esc(firstName)}</a>`;
@@ -177,7 +178,10 @@ export default async function handler(req, res) {
       const fullMsg = msg + '\n' + riskBlock;
 
       if (GROUP_ID && RISK_THREAD_ID) {
-        await tgSend(GROUP_ID, fullMsg, RISK_THREAD_ID);
+        const tgRes = await tgSend(GROUP_ID, fullMsg, RISK_THREAD_ID);
+        console.warn(`[/menu] tgSend result: ${JSON.stringify(tgRes).slice(0, 200)}`);
+      } else {
+        console.warn(`[/menu] SKIP tgSend — GROUP_ID or RISK_THREAD_ID missing`);
       }
 
       const eventLabel = event === 'menu' ? '/menu' : 'mini_app';
@@ -202,6 +206,7 @@ export default async function handler(req, res) {
     });
 
     console.warn(`[/start] NEW client ${userId} | ${risk.summary}`);
+    console.warn(`[/start] env check: GROUP_ID=${!!GROUP_ID} RISK_THREAD_ID=${!!RISK_THREAD_ID} BOT_TOKEN=${!!BOT_TOKEN}`);
 
     if (risk.level === 'LOW') {
       console.warn(`[/start] Low risk — no notification for ${userId}`);
@@ -233,7 +238,10 @@ export default async function handler(req, res) {
     const fullMsg = msg + '\n' + riskBlock;
 
     if (GROUP_ID && RISK_THREAD_ID) {
-      await tgSend(GROUP_ID, fullMsg, RISK_THREAD_ID);
+      const tgRes = await tgSend(GROUP_ID, fullMsg, RISK_THREAD_ID);
+      console.warn(`[/start] tgSend result: ${JSON.stringify(tgRes).slice(0, 200)}`);
+    } else {
+      console.warn(`[/start] SKIP tgSend — GROUP_ID or RISK_THREAD_ID missing`);
     }
 
     // Записываем нового клиента
