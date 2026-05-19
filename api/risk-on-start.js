@@ -110,10 +110,8 @@ export default async function handler(req, res) {
 
   if (username && !username.startsWith('@')) username = '@' + username;
 
-  // ─── ОТВЕЧАЕМ PuzzleBot'у СРАЗУ ─────────────────────────────
-  // Vercel-функция продолжает выполняться после res.status().json() —
-  // мы используем это чтобы PuzzleBot не упирался в 5-сек таймаут.
-  // res.status(200).json({ ok: true, async: true });
+  // Не отвечаем заранее — на Vercel fast-respond рубит функцию рандомно.
+  // Отвечаем 200 в конце каждой ветки (return res.status(200).json(...)).
 
   try {
     // История клиента
@@ -142,7 +140,7 @@ export default async function handler(req, res) {
       const recentAlert = await checkRecentAlert(userId);
       if (recentAlert) {
         console.warn(`[/menu] Skip alert for ${userId} — recent alert within 7 days`);
-        return;
+        return res.status(200).json({ ok: true, skipped: 'recent_alert' });
       }
 
       const risk = await assessRisk(userId, {
@@ -156,7 +154,7 @@ export default async function handler(req, res) {
 
       if (!hasCriticalSignals(risk)) {
         console.warn(`[/menu] No critical signals for ${userId} — no notification`);
-        return;
+        return res.status(200).json({ ok: true, skipped: 'no_critical' });
       }
 
       console.warn(`[/menu] CRITICAL ${userId} | ${risk.summary}`);
@@ -186,14 +184,13 @@ export default async function handler(req, res) {
 
       const eventLabel = event === 'menu' ? '/menu' : 'mini_app';
       await saveAlert(userId, username, firstName, risk.summary, eventLabel, risk.flags.join(' | '));
-
-      return;
+      return res.status(200).json({ ok: true, alert: 'sent' });
     }
 
     // ─── /start ──────────────────────────────────────────────
     if (!isNewClient) {
       console.warn(`[/start] Existing client ${userId} — no notification`);
-      return;
+      return res.status(200).json({ ok: true, skipped: 'existing' });
     }
 
     const risk = await assessRisk(userId, {
@@ -219,7 +216,7 @@ export default async function handler(req, res) {
         datetime: nowVN(),
         platform: 'start',
       });
-      return;
+      return res.status(200).json({ ok: true, skipped: 'low_risk' });
     }
 
     const userIdSafe = String(userId);
@@ -253,10 +250,10 @@ export default async function handler(req, res) {
       datetime: nowVN(),
       platform: 'start',
     });
+    res.status(200).json({ ok: true, alert: 'sent' });
+  } catch(e) {
 
   } catch(e) {
-    // Ответ PuzzleBot'у уже отправлен (200 OK). Здесь только логируем,
-    // res трогать нельзя — повторный send бросит ошибку.
     console.error('[risk-on-start] async work error:', e);
+    if (!res.headersSent) res.status(500).json({ error: 'internal' });
   }
-}
