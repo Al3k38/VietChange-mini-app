@@ -2,7 +2,7 @@
 // Vercel Serverless Function — вызывается из PuzzleBot при /start или /menu
 // Проверяет клиента и отправляет риск-блок в топик Risk Check.
 
-import { assessRisk, formatRiskBlock } from './risk-check.mjs';
+import { assessRisk, formatRiskBlock, formatRiskShort } from './risk-check.mjs';
 import { sheetsPost } from './_lib/sheets.mjs';
 import { esc } from './_lib/escape.mjs';
 
@@ -10,10 +10,48 @@ const BOT_TOKEN         = process.env.BOT_TOKEN;
 const GROUP_ID          = process.env.GROUP_ID;
 const RISK_THREAD_ID    = process.env.RISK_THREAD_ID;
 const RISK_CHECK_SECRET = process.env.RISK_CHECK_SECRET;
+const PUZZLEBOT_TOKEN   = process.env.PUZZLEBOT_TOKEN;
 
 function nowVN() {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString()
     .replace('T', ' ').substring(0, 16) + ' (GMT+7)';
+}
+
+// Установка переменной PuzzleBot для конкретного клиента
+async function puzzleSetVariable(userId, variableName, value) {
+  if (!PUZZLEBOT_TOKEN || !userId || !variableName) return { ok: false };
+  try {
+    const url = `https://api.puzzlebot.top/?token=${PUZZLEBOT_TOKEN}`
+      + `&method=variableChange`
+      + `&variable=${encodeURIComponent(variableName)}`
+      + `&expression=${encodeURIComponent(value)}`
+      + `&user_id=${userId}`;
+    const res = await fetch(url);
+    const data = await res.json().catch(() => ({}));
+    if (data.code !== 0) {
+      console.warn(`[risk-on-start] PuzzleBot variableChange failed user=${userId} var=${variableName}:`, data);
+      return { ok: false };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error(`[risk-on-start] PuzzleBot variableChange error user=${userId} var=${variableName}:`, e.message);
+    return { ok: false };
+  }
+}
+
+// Грубый рублёвый эквивалент для «крупная сумма + молодой» флага в risk-check.
+function approxRubEquiv(amtFrom, fromCode) {
+  const amt = parseFloat(
+    String(amtFrom || '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
+  ) || 0;
+  if (amt <= 0) return 0;
+  const c = String(fromCode || '').toUpperCase();
+  if (c === 'RUB')                    return amt;
+  if (c === 'USDT' || c === 'USD')    return amt * 80;
+  if (c === 'EUR')                    return amt * 86;
+  if (c === 'KZT')                    return amt * 0.18;
+  if (c === 'VND')                    return amt * 0.003;
+  return 0;
 }
 
 async function tgSend(chatId, text, threadId) {
@@ -133,6 +171,31 @@ export default async function handler(req, res) {
       nameChanges = visitData.nameChanges || 0;
       usernameChanges = visitData.usernameChanges || 0;
       isNewClient = !firstSeen;
+    }
+
+    // ─── PuzzleBot-заявка: риск в переменные ─────────────────
+    // Полный 9-сигнальный риск, результат пишется в PuzzleBot переменные
+    // risk_short и risk_block. Алёрт в Risk Check НЕ шлём — риск идёт
+    // прямо в сообщение заявки через {{risk_short}} / {{risk_block}}.
+    if (event === 'order') {
+      const rubEquiv = approxRubEquiv(d.amtFrom || d.amount, d.fromCode || d.currency);
+      const risk = await assessRisk(userId, {
+        username,
+        rubEquiv,
+        photoUrl,
+        firstSeen,
+        nameChanges,
+        usernameChanges,
+      });
+      console.warn(`[risk-on-start order] userId=${userId} risk=${risk.summary} rubEquiv=${rubEquiv}`);
+
+      const shortText = formatRiskShort(risk);
+      const fullBlock = formatRiskBlock(risk);
+      await Promise.all([
+        puzzleSetVariable(userId, 'risk_short', shortText),
+        puzzleSetVariable(userId, 'risk_block', fullBlock),
+      ]);
+      return res.status(200).json({ ok: true, vars_set: true });
     }
 
     // ─── /menu или mini_app ──────────────────────────────────
