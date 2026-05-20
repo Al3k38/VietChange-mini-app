@@ -202,9 +202,10 @@ export default async function handler(req, res) {
           datetime: nowVN(),
           checkOnly: true,
         }),
-        new Promise(r => setTimeout(() => r(null), 1500)),
+        new Promise(r => setTimeout(() => r(null), 2500)),
       ]);
       const orderFirstSeen = orderVisit ? (orderVisit.firstSeen || null) : null;
+      console.warn(`[risk-on-start order] orderVisit=${JSON.stringify(orderVisit).slice(0, 200)}`);
       const risk = await assessRisk(userId, {
         username,
         rubEquiv,
