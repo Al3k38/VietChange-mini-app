@@ -190,11 +190,26 @@ export default async function handler(req, res) {
     // прямо в сообщение заявки через {{risk_short}} / {{risk_block}}.
     if (event === 'order') {
       const rubEquiv = approxRubEquiv(d.amtFrom || d.amount, d.fromCode || d.currency);
+      // Sheets-lookup с укороченным таймаутом 1.5 сек — если Apps Script
+      // быстро ответит, получим firstSeen для «С нами с DATE» в риск-блоке.
+      // Иначе продолжаем без него, чтобы уложиться в 5-сек таймаут PuzzleBot.
+      const orderVisit = await Promise.race([
+        sheetsPost({
+          type: 'visit',
+          userId,
+          username,
+          firstName,
+          datetime: nowVN(),
+          checkOnly: true,
+        }),
+        new Promise(r => setTimeout(() => r(null), 1500)),
+      ]);
+      const orderFirstSeen = orderVisit ? (orderVisit.firstSeen || null) : null;
       const risk = await assessRisk(userId, {
         username,
         rubEquiv,
         photoUrl,
-        firstSeen,
+        firstSeen: orderFirstSeen,
         nameChanges,
         usernameChanges,
       });
