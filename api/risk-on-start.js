@@ -163,19 +163,25 @@ export default async function handler(req, res) {
     let nameChanges = 0;
     let usernameChanges = 0;
 
-    const visitData = await sheetsPost({
-      type: 'visit',
-      userId,
-      username,
-      firstName,
-      datetime: nowVN(),
-      checkOnly: true,
-    });
-    if (visitData) {
-      firstSeen = visitData.firstSeen || null;
-      nameChanges = visitData.nameChanges || 0;
-      usernameChanges = visitData.usernameChanges || 0;
-      isNewClient = !firstSeen;
+    // Для /order пропускаем sheets-lookup — экономим до 5 сек, иначе
+    // PuzzleBot упирается в свой 5-сек таймаут и показывает клиенту
+    // «Не удалось отправить запрос». История имён/username (2 из 9
+    // сигналов риска) пропадает — приемлемо.
+    if (event !== 'order') {
+      const visitData = await sheetsPost({
+        type: 'visit',
+        userId,
+        username,
+        firstName,
+        datetime: nowVN(),
+        checkOnly: true,
+      });
+      if (visitData) {
+        firstSeen = visitData.firstSeen || null;
+        nameChanges = visitData.nameChanges || 0;
+        usernameChanges = visitData.usernameChanges || 0;
+        isNewClient = !firstSeen;
+      }
     }
 
     // ─── PuzzleBot-заявка: риск в переменные ─────────────────
