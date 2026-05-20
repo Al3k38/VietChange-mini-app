@@ -213,7 +213,7 @@ export default async function handler(req, res) {
         nameChanges,
         usernameChanges,
       });
-      console.warn(`[risk-on-start order] userId=${userId} risk=${risk.summary} rubEquiv=${rubEquiv}`);
+      console.warn(`[risk-on-start order] userId=${userId} risk=${risk.summary} rubEquiv=${rubEquiv} firstSeen=${orderFirstSeen || 'null'} flagsCount=${risk.flags.length}`);
 
       const shortText = formatRiskShort(risk);
       const fullBlock = formatRiskBlock(risk);
