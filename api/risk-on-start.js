@@ -294,20 +294,6 @@ export default async function handler(req, res) {
     console.warn(`[/start] NEW client ${userId} | ${risk.summary}`);
     console.warn(`[/start] env check: GROUP_ID=${!!GROUP_ID} RISK_THREAD_ID=${!!RISK_THREAD_ID} BOT_TOKEN=${!!BOT_TOKEN}`);
 
-    if (risk.level === 'LOW') {
-      console.warn(`[/start] Low risk — no notification for ${userId}`);
-      // Записываем нового клиента даже при низком риске
-      await sheetsPost({
-        type: 'visit',
-        userId,
-        username: username.replace(/^@/, ''),
-        firstName,
-        datetime: nowVN(),
-        platform: 'start',
-      });
-      return res.status(200).json({ ok: true, skipped: 'low_risk' });
-    }
-
     const userIdSafe = String(userId);
     const clientLink = `<a href="tg://user?id=${userIdSafe}">${esc(firstName)}</a>`;
     const usernamePart = username ? ` · ${esc(username)}` : '';
