@@ -190,29 +190,61 @@ export default async function handler(req, res) {
     // прямо в сообщение заявки через {{risk_short}} / {{risk_block}}.
     if (event === 'order') {
       const rubEquiv = approxRubEquiv(d.amtFrom || d.amount, d.fromCode || d.currency);
-      // Sheets-lookup с укороченным таймаутом 1.5 сек — если Apps Script
-      // быстро ответит, получим firstSeen для «С нами с DATE» в риск-блоке.
-      // Иначе продолжаем без него, чтобы уложиться в 5-сек таймаут PuzzleBot.
-      const orderVisit = await Promise.race([
-        sheetsPost({
-          type: 'visit',
-          userId,
+      // Sheets и assessRisk запускаем ПАРАЛЛЕЛЬНО — total time = max(sheets, risk)
+      // вместо суммы. Sheets с race-таймаутом 2.5 сек.
+      // assessRisk идёт без firstSeen — флаг «С нами с» добавляем вручную ниже.
+      const [orderVisit, risk] = await Promise.all([
+        Promise.race([
+          sheetsPost({
+            type: 'visit',
+            userId,
+            username,
+            firstName,
+            datetime: nowVN(),
+            checkOnly: true,
+          }),
+          new Promise(r => setTimeout(() => r(null), 2500)),
+        ]),
+        assessRisk(userId, {
           username,
-          firstName,
-          datetime: nowVN(),
-          checkOnly: true,
+          rubEquiv,
+          photoUrl,
+          firstSeen: null,
+          nameChanges,
+          usernameChanges,
         }),
-        new Promise(r => setTimeout(() => r(null), 2500)),
       ]);
       const orderFirstSeen = orderVisit ? (orderVisit.firstSeen || null) : null;
-      const risk = await assessRisk(userId, {
-        username,
-        rubEquiv,
-        photoUrl,
-        firstSeen: orderFirstSeen,
-        nameChanges,
-        usernameChanges,
-      });
+      // Ручная добавка флага «С нами с» (логика из risk-check.mjs:229-258).
+      if (orderFirstSeen) {
+        try {
+          const firstDate = new Date(orderFirstSeen);
+          if (!isNaN(firstDate.getTime())) {
+            const daysSince = Math.floor((Date.now() - firstDate.getTime()) / 86400000);
+            let withUsStr;
+            if (daysSince < 1) withUsStr = 'сегодня';
+            else if (daysSince < 7) withUsStr = `${daysSince} дн назад`;
+            else if (daysSince < 30) {
+              const w = Math.floor(daysSince / 7);
+              withUsStr = `${w} ${w === 1 ? 'неделю' : w < 5 ? 'недели' : 'недель'} назад`;
+            } else if (daysSince < 365) {
+              const m = Math.floor(daysSince / 30);
+              withUsStr = `${m} ${m === 1 ? 'месяц' : m < 5 ? 'месяца' : 'месяцев'} назад`;
+            } else {
+              const y = (daysSince / 365).toFixed(1);
+              withUsStr = `${y} года назад`;
+            }
+            if (daysSince < 1) {
+              risk.flags.push(`С нами с: ⚠️ ${withUsStr} (новый)`);
+              if (risk.level === 'LOW') risk.level = 'MEDIUM';
+            } else if (daysSince < 20) {
+              risk.flags.push(`С нами с: 🟡 ${withUsStr}`);
+            } else {
+              risk.flags.push(`С нами с: ✅ ${withUsStr}`);
+            }
+          }
+        } catch(e) { /* пропускаем */ }
+      }
       console.warn(`[risk-on-start order] userId=${userId} risk=${risk.summary} rubEquiv=${rubEquiv} firstSeen=${orderFirstSeen || 'null'} flagsCount=${risk.flags.length}`);
 
       const shortText = formatRiskShort(risk);
