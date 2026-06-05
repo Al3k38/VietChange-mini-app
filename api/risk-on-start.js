@@ -163,11 +163,16 @@ export default async function handler(req, res) {
     let nameChanges = 0;
     let usernameChanges = 0;
 
-    // Для /order пропускаем sheets-lookup — экономим до 5 сек, иначе
-    // PuzzleBot упирается в свой 5-сек таймаут и показывает клиенту
-    // «Не удалось отправить запрос». История имён/username (2 из 9
-    // сигналов риска) пропадает — приемлемо.
-    if (event !== 'order') {
+    // Если visit-данные пришли в body (от /api/visit) — используем их
+    // и пропускаем sheets lookup. Экономит 1 sheetsPost на открытие Mini App.
+    // Для /start, /menu от PuzzleBot — body этих полей не содержит, поэтому
+    // fallback на старую логику. Для /order sheets-lookup отдельно ниже.
+    if (d.firstSeen !== undefined) {
+      firstSeen = d.firstSeen || null;
+      nameChanges = Number(d.nameChanges || 0);
+      usernameChanges = Number(d.usernameChanges || 0);
+      isNewClient = !firstSeen;
+    } else if (event !== 'order') {
       const visitData = await sheetsPost({
         type: 'visit',
         userId,
