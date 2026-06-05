@@ -155,7 +155,9 @@ export default async function handler(req, res) {
       accountYear: accountYearForSheet,
     });
 
-    const firstSeen = sheetResp && sheetResp.firstSeen ? sheetResp.firstSeen : null;
+    const firstSeen       = sheetResp && sheetResp.firstSeen       ? sheetResp.firstSeen       : null;
+    const nameChanges     = sheetResp && sheetResp.nameChanges     ? sheetResp.nameChanges     : 0;
+    const usernameChanges = sheetResp && sheetResp.usernameChanges ? sheetResp.usernameChanges : 0;
 
     const accountYear = estimateAccountYear(userId);
     const currentYear = new Date().getFullYear();
@@ -237,6 +239,9 @@ export default async function handler(req, res) {
             photoUrl: '',
             isPremium: verifiedUser.is_premium ? '1' : '0',
             event: 'mini_app',
+            firstSeen,
+            nameChanges,
+            usernameChanges,
           }),
           signal: controller.signal,
         });
