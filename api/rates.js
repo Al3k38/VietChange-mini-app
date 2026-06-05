@@ -2,7 +2,7 @@
 // Использует sheetsGet, который автоматически подставляет APPS_SCRIPT_SECRET.
 // Rate limit: 60 запросов/мин с одного IP — защита квоты Apps Script.
 
-import { getServerRates, getRatesStaleness } from './_lib/rates-server.mjs';
+import { sheetsGet } from './_lib/sheets.mjs';
 import { checkRateLimit, getClientIp } from './_lib/ratelimit.mjs';
 
 const RATES_PER_MINUTE = 60;
@@ -20,22 +20,11 @@ export default async function handler(req, res) {
     return res.status(429).json({ ok: false, error: 'Too many requests' });
   }
 
- const rates = await getServerRates();
-  if (!rates) {
+  const data = await sheetsGet();
+  if (!data) {
     return res.status(502).json({ ok: false, error: 'Upstream unavailable' });
   }
-  const stale = getRatesStaleness();
-  // Если курсы из fallback (Supabase backup) — не кэшируем CDN-ом, чтобы
-  // следующий запрос мог попасть на ожившие Apps Script. Свежие — кэш 60 сек.
-  if (stale.isFallback) {
-    res.setHeader('Cache-Control', 'no-store');
-  } else {
-    res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
-  }
-  return res.status(200).json({
-    ok: true,
-    rates,
-    updated: new Date().toISOString(),
-    source: stale.source,
-    isFallback: stale.isFallback,
-  });
+  // Кэш на 60 секунд (как было)
+  res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
+  return res.status(200).json(data);
+}
