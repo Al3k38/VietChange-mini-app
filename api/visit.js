@@ -1,4 +1,9 @@
 // api/visit.js — Логирование визитов клиентов в Mini App
+//
+// Антиспам по уведомлениям визитов — через Supabase (не Apps Script).
+// Раньше делали 3 sheetsPost на каждый визит → под нагрузкой клали
+// Apps Script. Теперь 1 sheetsPost (визит) + 2 Supabase REST (антиспам).
+// История антиспама не сохраняется в Sheets (видна только в TG-группе).
 
 import { sheetsPost } from './_lib/sheets.mjs';
 import { esc } from './_lib/escape.mjs';
@@ -8,11 +13,65 @@ import { checkRateLimit } from './_lib/ratelimit.mjs';
 
 const VISIT_PER_MINUTE = 10;
 
-const BOT_TOKEN          = process.env.BOT_TOKEN;
-const GROUP_ID           = process.env.GROUP_ID;
-const GENERAL_THREAD_ID  = process.env.GENERAL_THREAD_ID;
-const RISK_CHECK_SECRET  = process.env.RISK_CHECK_SECRET;
+const BOT_TOKEN            = process.env.BOT_TOKEN;
+const GROUP_ID             = process.env.GROUP_ID;
+const GENERAL_THREAD_ID    = process.env.GENERAL_THREAD_ID;
+const RISK_CHECK_SECRET    = process.env.RISK_CHECK_SECRET;
+const SUPABASE_URL         = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
+// ─── АНТИСПАМ (Supabase) ─────────────────────────────────────
+// Таблица visit_alerts(user_id TEXT PK, last_alert_at TIMESTAMPTZ, ...).
+// Если Supabase недоступен — checkRecentVisitAlert вернёт false (разрешит
+// алёрт). Safer default: лучше лишний алёрт, чем пропущенный риск.
+async function checkRecentVisitAlert(userId) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return false;
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/visit_alerts`
+      + `?user_id=eq.${encodeURIComponent(String(userId))}`
+      + `&last_alert_at=gte.${encodeURIComponent(oneHourAgo)}`
+      + `&select=user_id`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey':        SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      },
+    });
+    if (!res.ok) {
+      console.warn(`[visit] supabase check non-OK: ${res.status}`);
+      return false;
+    }
+    const arr = await res.json();
+    return Array.isArray(arr) && arr.length > 0;
+  } catch (e) {
+    console.warn(`[visit] supabase check failed: ${e.message}`);
+    return false;
+  }
+}
+
+async function saveVisitAlert(userId, username, firstName) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/visit_alerts`, {
+      method: 'POST',
+      headers: {
+        'apikey':        SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Content-Type':  'application/json',
+        'Prefer':        'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify({
+        user_id: String(userId),
+        last_alert_at: new Date().toISOString(),
+        username: username || null,
+        first_name: firstName || null,
+      }),
+    });
+  } catch (e) {
+    console.warn(`[visit] supabase save failed: ${e.message}`);
+  }
+}
 
 // Примерное определение года регистрации Telegram-аккаунта по ID
 function estimateAccountYear(userId) {
@@ -146,25 +205,18 @@ export default async function handler(req, res) {
       `<b>Платформа:</b> ${esc(platform) || '—'} · Telegram ${esc(tgVersion) || '—'}`,
     ].filter(Boolean).join('\n');
 
-    // Антиспам: было ли уведомление за последний час
-    const recentRes = await sheetsPost({ type: 'check_visit_alert', userId: String(userId) });
-    const recentVisitAlert = recentRes && recentRes.recentAlert === true;
+    // Антиспам через Supabase (см. checkRecentVisitAlert наверху файла)
+    const recentVisitAlert = await checkRecentVisitAlert(userId);
 
     if (GROUP_ID && !recentVisitAlert) {
       await tgSend(GROUP_ID, msg, null);
-      await sheetsPost({
-        type: 'save_visit_alert',
-        datetime: nowVN(),
-        userId: String(userId),
-        username: username || '',
-        firstName: firstName || '',
-      });
+      await saveVisitAlert(userId, username || '', firstName || '');
     } else if (recentVisitAlert) {
       console.warn(`[visit] Skip alert for ${userId} — recent visit within 1 hour`);
     }
 
     // Запуск риск-проверки (свой endpoint, не Apps Script).
-    // NB: token в URL — оставлено как было; будет переведено на Authorization-header в задаче #5.
+    // Токен идёт в Authorization-header — не светится в access-логах Vercel.
     if (RISK_CHECK_SECRET) {
       const proto = req.headers['x-forwarded-proto'] || 'https';
       const host = req.headers.host;
