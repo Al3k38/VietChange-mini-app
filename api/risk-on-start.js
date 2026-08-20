@@ -5,12 +5,19 @@
 import { assessRisk, formatRiskBlock, formatRiskShort } from './risk-check.mjs';
 import { sheetsPost } from './_lib/sheets.mjs';
 import { esc } from './_lib/escape.mjs';
+import { checkRateLimit } from './_lib/ratelimit.mjs';
 
 const BOT_TOKEN         = process.env.BOT_TOKEN;
 const GROUP_ID          = process.env.GROUP_ID;
 const RISK_THREAD_ID    = process.env.RISK_THREAD_ID;
 const RISK_CHECK_SECRET = process.env.RISK_CHECK_SECRET;
 const PUZZLEBOT_TOKEN   = process.env.PUZZLEBOT_TOKEN;
+
+const SUPABASE_URL         = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+
+// Больше скольких /start в минуту считаем флудом.
+const START_ALERT_LIMIT = 10;
 
 function nowVN() {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString()
@@ -97,6 +104,45 @@ async function saveAlert(userId, username, firstName, riskLevel, event, signals)
   });
 }
 
+// ─── Гейт против флуда /start ────────────────────────────────
+// Счётчик rate_limits считает по минутам. Если смотреть только текущую
+// минуту, в начале каждой новой минуты сквозь гейт проскакивало бы ещё
+// 10 алёртов, поэтому дополнительно читаем предыдущую минуту.
+async function prevMinuteCount(key) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return 0;
+  try {
+    const prevMin = new Date(Math.floor(Date.now() / 60000) * 60000 - 60000).toISOString();
+    const url = `${SUPABASE_URL}/rest/v1/rate_limits`
+      + `?key=eq.${encodeURIComponent(key)}`
+      + `&window_minute=eq.${encodeURIComponent(prevMin)}`
+      + `&select=count`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey':        SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+      },
+    });
+    if (!res.ok) return 0;
+    const rows = await res.json();
+    return (rows && rows[0] && rows[0].count) || 0;
+  } catch (e) {
+    console.warn('[/start] prevMinuteCount failed:', e.message);
+    return 0; // fail-open — при сбое Supabase гейт не блокирует
+  }
+}
+
+// pass=false → алёрт не шлём. notify=true → шлём одно сводное сообщение.
+async function startFloodGate() {
+  const cur  = await checkRateLimit('start_alert', START_ALERT_LIMIT);
+  const prev = await prevMinuteCount('start_alert');
+  const floodNow  = !cur.allowed;              // лимит пробит в этой минуте
+  const floodPrev = prev > START_ALERT_LIMIT;  // прошлая минута была флудовой
+  if (!floodNow && !floodPrev) return { pass: true, count: cur.count, prev };
+  // Сводка ровно один раз в минуту — на первом заблокированном событии.
+  const notify = floodNow && cur.count === START_ALERT_LIMIT + 1;
+  return { pass: false, notify, count: cur.count, prev };
+}
+
 function hasCriticalSignals(risk) {
   for (const flag of risk.flags) {
     if (flag.includes('CAS:') && flag.includes('🚩')) return true;
@@ -157,6 +203,26 @@ export default async function handler(req, res) {
   // Отвечаем 200 в конце каждой ветки (return res.status(200).json(...)).
 
   try {
+    // ─── ЗАЩИТА ОТ ФЛУДА /start ──────────────────────────────
+    // Гейт стоит ДО sheets-lookup и risk-check: при флуде не тратим
+    // ни квоту Apps Script, ни лимиты CAS/LolsBot, ни лимиты Telegram.
+    if (event === 'start') {
+      const gate = await startFloodGate();
+      if (!gate.pass) {
+        if (gate.notify && GROUP_ID && RISK_THREAD_ID) {
+          await tgSend(GROUP_ID, [
+            `⚠️ <b>Флуд /start</b>`,
+            `📅 ${nowVN()}`,
+            ``,
+            `Поток превысил ${START_ALERT_LIMIT}/мин (за прошлую минуту: <b>${gate.prev}</b>).`,
+            `Алёрты «Новый клиент в боте» приостановлены — возобновятся автоматически, когда поток спадёт.`,
+          ].join('\n'), RISK_THREAD_ID);
+        }
+        console.warn(`[/start] FLOOD — skipped user=${userId} min=${gate.count} prev=${gate.prev}`);
+        return res.status(200).json({ ok: true, skipped: 'flood' });
+      }
+    }
+
     // История клиента
     let isNewClient = true;
     let firstSeen = null;
