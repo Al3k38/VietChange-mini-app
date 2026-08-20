@@ -75,12 +75,28 @@ async function tgSend(chatId, text, threadId) {
       disable_web_page_preview: true,
     };
     if (threadId) body.message_thread_id = parseInt(threadId);
-    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    return res.json();
+    const send = async () => {
+      const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return res.json();
+    };
+    let data = await send();
+    // 429 = Telegram просит подождать retry_after секунд. Одна повторная
+    // попытка, ожидание капим 5 сек — дольше ждать нельзя (5-сек таймаут
+    // PuzzleBot + лимит времени Vercel-функции).
+    if (data && data.ok === false && data.error_code === 429) {
+      const wait = Math.min((data.parameters && data.parameters.retry_after) || 1, 5);
+      console.warn(`[tgSend] 429 — retry in ${wait}s`);
+      await new Promise(r => setTimeout(r, wait * 1000));
+      data = await send();
+      if (data && data.ok === false) {
+        console.warn(`[tgSend] DROPPED after retry: ${JSON.stringify(data).slice(0, 150)}`);
+      }
+    }
+    return data;
   } catch(e) { console.error('tgSend error:', e); }
 }
 
@@ -178,6 +194,12 @@ export default async function handler(req, res) {
 
   const event = String(d.event || 'start').toLowerCase();
   console.warn(`[risk-on-start] event=${event} userId=${d.userId || (d.user && d.user.id) || 'unknown'}`);
+
+  // Что именно шлёт PuzzleBot на /start — чтобы при следующей атаке сразу
+  // видеть источник (start-параметр / метку), а не раскапывать постфактум.
+  if (event === 'start') {
+    console.warn(`[/start] src=${d.start || d.startParam || d.start_param || d.ref || d.source || '-'} keys=${Object.keys(d).join(',')}`);
+  }
 
   let userId, username, firstName, photoUrl = '';
   if (d.user && d.user.id) {
