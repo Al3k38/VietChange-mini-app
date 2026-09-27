@@ -19,7 +19,7 @@ const PUZZLEBOT_CMD    = process.env.PUZZLEBOT_CMD || 'Повтор заявки
 function genOrderNum() {
   const d = new Date(Date.now() + 7 * 3600 * 1000);
   const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${Math.floor(Math.random()*9000+1000)}`;
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${Math.floor(Math.random()*900000+100000)}`;
 }
 
 function nowVN() {
