@@ -30,7 +30,8 @@ export default async function handler(req, res) {
   // Если курсы из fallback (Supabase backup) — не кэшируем CDN-ом, чтобы
   // следующий запрос мог попасть на ожившие Apps Script. Свежие — кэш 60 сек.
   if (stale.isFallback) {
-    res.setHeader('Cache-Control', 'no-store');
+        // Резерв кэшируем коротко: клиенты не ждут Apps Script, а фоновое обновление проверит, ожил ли он.
+    res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=60');
   } else {
     res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
   }
