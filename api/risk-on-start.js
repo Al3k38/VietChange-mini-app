@@ -28,7 +28,7 @@ function nowVN() {
 function genOrderNum() {
   const d = new Date(Date.now() + 7 * 3600 * 1000);
   const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${Math.floor(Math.random()*9000+1000)}`;
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-B${Math.floor(Math.random()*9000+1000)}`;
 }
 
 // Установка переменной PuzzleBot для конкретного клиента
