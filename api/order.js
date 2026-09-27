@@ -9,6 +9,7 @@ import { verifyTelegramInitData } from './_lib/verify.mjs';
 import { setCorsHeaders } from './_lib/cors.mjs';
 import { markNonceUsed, getAuthDate } from './_lib/replay.mjs';
 import { checkBlacklist } from './_lib/blacklist.mjs';
+import { sendOrderToCashbook, htmlToPlain } from './_lib/cashbook.mjs';
 
 const BOT_TOKEN        = process.env.BOT_TOKEN;
 const GROUP_ID         = process.env.GROUP_ID;
@@ -370,6 +371,16 @@ export default async function handler(req, res) {
       }
     }
 
+            // Копия заявки в Cashbook. Идёт параллельно с остальной работой ниже,
+    // ждём её только перед ответом — клиента не задерживает. Не бросает ошибок.
+    const cashbookPromise = sendOrderToCashbook({
+      orderNum,
+      text: htmlToPlain(groupMsg),
+      source: 'miniapp',
+      clientTgId: d.userId,
+      clientUsername: (d.username && d.username.startsWith('@')) ? d.username : '',
+    });
+
     if (GROUP_ID && riskBlock && orderMessageId) {
       await tgSend(GROUP_ID, riskBlock, THREAD_ID, orderMessageId);
     }
@@ -404,6 +415,7 @@ export default async function handler(req, res) {
       comment:   d.comment   || '',
     });
 
+            await cashbookPromise;
     return res.status(200).json({ ok: true, orderNum });
 
   } catch(e) {
