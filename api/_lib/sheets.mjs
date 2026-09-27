@@ -35,16 +35,17 @@ export async function sheetsPost(payload) {
   };
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const res = await fetchWithTimeout(APPS_SCRIPT_URL, opts, 5000);
+      const res = await fetchWithTimeout(APPS_SCRIPT_URL, opts, 8000);
       if (!res.ok) {
         console.warn(`[sheets] post non-OK status: ${res.status} (attempt ${attempt}/2)`);
-        if (attempt === 2) return null;
+                 // Таймаут: Apps Script запрос всё равно выполнит — повтор только задвоит запись и ожидание.
+         if (attempt === 2 || e.name === 'AbortError') return null;
         await new Promise(r => setTimeout(r, 500));
         continue;
       }
       try { return await res.json(); } catch { return null; }
     } catch (e) {
-      const reason = e.name === 'AbortError' ? 'timeout (5s)' : e.message;
+      const reason = e.name === 'AbortError' ? 'timeout (8s)' : e.message;
       console.error(`[sheets] post failed (attempt ${attempt}/2): ${reason}`);
       if (attempt === 2) return null;
       await new Promise(r => setTimeout(r, 500));
