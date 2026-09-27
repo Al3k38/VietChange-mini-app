@@ -7,11 +7,12 @@
 //  • секрет — только в заголовке X-Orders-Secret (не в адресе и не в теле);
 //  • таймаут 5 сек; 1 повтор при сбое сети / 500; на таймаут и 4xx/503 не повторяем;
 //  • функция НИКОГДА не бросает исключений — сбой Cashbook не ломает заявку;
+//  • секрет — переменная INCOMING_ORDERS_SECRET, то же имя и значение, что в Cashbook;
 //  • нет секрета в окружении → тихо пропускаем (можно выкладывать код до настройки).
 
 const CASHBOOK_ORDERS_URL    = process.env.CASHBOOK_ORDERS_URL
   || 'https://viet-change-cashbook.vercel.app/api/orders/incoming';
-const CASHBOOK_ORDERS_SECRET = process.env.CASHBOOK_ORDERS_SECRET;
+const INCOMING_ORDERS_SECRET = process.env.INCOMING_ORDERS_SECRET;
 
 const TIMEOUT_MS = 5000;
 const MAX_TEXT   = 4000;
@@ -40,8 +41,8 @@ function nowIsoVN() {
 }
 
 export async function sendOrderToCashbook({ orderNum, text, source, clientTgId, clientUsername, createdAt }) {
-  if (!CASHBOOK_ORDERS_SECRET) {
-    console.warn(`[cashbook] skip ${orderNum}: CASHBOOK_ORDERS_SECRET не задан`);
+  if (!INCOMING_ORDERS_SECRET) {
+    console.warn(`[cashbook] skip ${orderNum}: INCOMING_ORDERS_SECRET не задан`);
     return { ok: false, skipped: 'no_secret' };
   }
   if (!orderNum || !text) {
@@ -69,7 +70,7 @@ export async function sendOrderToCashbook({ orderNum, text, source, clientTgId, 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Orders-Secret': CASHBOOK_ORDERS_SECRET,
+          'X-Orders-Secret': INCOMING_ORDERS_SECRET,
         },
         body: JSON.stringify(body),
         signal: ctrl.signal,
