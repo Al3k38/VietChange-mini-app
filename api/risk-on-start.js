@@ -24,6 +24,13 @@ function nowVN() {
     .replace('T', ' ').substring(0, 16) + ' (GMT+7)';
 }
 
+// Номер заявки — копия genOrderNum() из api/order.js, формат YYYYMMDD-XXXX (GMT+7)
+function genOrderNum() {
+  const d = new Date(Date.now() + 7 * 3600 * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${Math.floor(Math.random()*9000+1000)}`;
+}
+
 // Установка переменной PuzzleBot для конкретного клиента
 async function puzzleSetVariable(userId, variableName, value) {
   if (!PUZZLEBOT_TOKEN || !userId || !variableName) return { ok: false };
@@ -310,10 +317,13 @@ export default async function handler(req, res) {
 
       const shortText = formatRiskShort(risk);
       const fullBlock = formatRiskBlock(risk);
+      const orderNum = genOrderNum();
       await Promise.all([
         puzzleSetVariable(userId, 'risk_short', shortText),
         puzzleSetVariable(userId, 'risk_block', fullBlock),
+        puzzleSetVariable(userId, 'order_num', orderNum),
       ]);
+      console.warn(`[risk-on-start order] order_num=${orderNum} userId=${userId}`);
       return res.status(200).json({ ok: true, vars_set: true });
     }
 
