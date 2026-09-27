@@ -38,8 +38,7 @@ export async function sheetsPost(payload) {
       const res = await fetchWithTimeout(APPS_SCRIPT_URL, opts, 8000);
       if (!res.ok) {
         console.warn(`[sheets] post non-OK status: ${res.status} (attempt ${attempt}/2)`);
-                 // Таймаут: Apps Script запрос всё равно выполнит — повтор только задвоит запись и ожидание.
-         if (attempt === 2 || e.name === 'AbortError') return null;
+        if (attempt === 2) return null;
         await new Promise(r => setTimeout(r, 500));
         continue;
       }
@@ -47,7 +46,8 @@ export async function sheetsPost(payload) {
     } catch (e) {
       const reason = e.name === 'AbortError' ? 'timeout (8s)' : e.message;
       console.error(`[sheets] post failed (attempt ${attempt}/2): ${reason}`);
-      if (attempt === 2) return null;
+      // Таймаут: Apps Script запрос всё равно выполнит — повтор только задвоит запись и ожидание.
+      if (attempt === 2 || e.name === 'AbortError') return null;
       await new Promise(r => setTimeout(r, 500));
     }
   }
