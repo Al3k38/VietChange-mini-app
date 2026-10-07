@@ -289,6 +289,8 @@ export default async function handler(req, res) {
     // risk_short и risk_block. Алёрт в Risk Check НЕ шлём — риск идёт
     // прямо в сообщение заявки через {{risk_short}} / {{risk_block}}.
     if (event === 'order') {
+      const orderNum = genOrderNum();
+      await puzzleSetVariable(userId, 'order_num', orderNum);
       const rubEquiv = approxRubEquiv(d.amtFrom || d.amount, d.fromCode || d.currency);
       // Sheets-lookup с укороченным таймаутом 1.5 сек — если Apps Script
       // быстро ответит, получим firstSeen для «С нами с DATE» в риск-блоке.
@@ -317,11 +319,9 @@ export default async function handler(req, res) {
 
       const shortText = formatRiskShort(risk);
       const fullBlock = formatRiskBlock(risk);
-      const orderNum = genOrderNum();
       await Promise.all([
         puzzleSetVariable(userId, 'risk_short', shortText),
         puzzleSetVariable(userId, 'risk_block', fullBlock),
-        puzzleSetVariable(userId, 'order_num', orderNum),
       ]);
       console.warn(`[risk-on-start order] order_num=${orderNum} userId=${userId}`);
       return res.status(200).json({ ok: true, vars_set: true });
