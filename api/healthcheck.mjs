@@ -163,9 +163,13 @@ async function checkRates() {
 }
 
 export default async function handler(req, res) {
-  // Защита: проверяем секретный ключ в URL
-  const secret = req.query.secret;
-  if (secret !== process.env.HEALTHCHECK_SECRET) {
+  // Защита: секрет в заголовке X-Webhook-Secret (с 08.10.2026 — так он не
+  // светится в истории запусков cron-job.org и журналах) или по-старому в
+  // адресе ?secret=. Секрет на сервере не задан — вход закрыт для всех
+  // (раньше пустой секрет пропускал запрос без ключа).
+  const expected = process.env.HEALTHCHECK_SECRET;
+  const secret = req.headers['x-webhook-secret'] || req.query.secret || '';
+  if (!expected || secret !== expected) {
     return res.status(403).json({ ok: false, error: 'Forbidden' });
   }
 
