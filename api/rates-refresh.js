@@ -20,6 +20,9 @@ import { persistRatesToSupabase } from './_lib/rates-server.mjs';
 // Ждём дольше, чем заявка (8 с): этот ответ никто не ждёт.
 // Меньше 15 с — чтобы уложиться в стандартный лимит функции и в 30 с cron-job.org.
 const REFRESH_TIMEOUT_MS = 12000;
+// Первый шаг (POST) ждём не дольше 6 с: не дождались — спрашиваем курс заново
+// (курс только читается, повтор безопасен). Нормальный ответ — 1–4 с.
+const REFRESH_POST_TRY_MS = 6000;
 
 export default async function handler(req, res) {
   const expected = process.env.HEALTHCHECK_SECRET;
@@ -29,23 +32,27 @@ export default async function handler(req, res) {
   }
 
   const started = Date.now();
-  const data = await sheetsGet({ timeoutMs: REFRESH_TIMEOUT_MS });
+  // Шаги запроса к Apps Script с длительностью («POST 302 1840мс», «GET таймаут
+  // 3000мс»…) — уходят в ответ, их видно в истории запусков cron-job.org.
+  const steps = [];
+  const data = await sheetsGet({ timeoutMs: REFRESH_TIMEOUT_MS, postTryMs: REFRESH_POST_TRY_MS, trace: steps });
   const waitedMs = Date.now() - started;
 
   if (!(data && data.ok && data.rates)) {
     console.warn(`[rates-refresh] Apps Script не дал курс за ${waitedMs} мс`);
-    return res.status(200).json({ ok: false, step: 'apps_script', waited_ms: waitedMs });
+    return res.status(200).json({ ok: false, step: 'apps_script', waited_ms: waitedMs, steps });
   }
 
   const saved = await persistRatesToSupabase(data.rates);
   if (!saved) {
     console.warn('[rates-refresh] курс получен, но копия в Supabase не записана');
-    return res.status(200).json({ ok: false, step: 'supabase', waited_ms: waitedMs });
+    return res.status(200).json({ ok: false, step: 'supabase', waited_ms: waitedMs, steps });
   }
 
   return res.status(200).json({
     ok: true,
     waited_ms: waitedMs,
     pairs: Object.keys(data.rates).length,
+    steps,
   });
 }
