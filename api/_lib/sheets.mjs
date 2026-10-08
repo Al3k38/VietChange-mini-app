@@ -22,7 +22,9 @@ async function fetchWithTimeout(url, options, timeoutMs = 5000) {
 // ─── POST → doPost ────────────────────────────────────────────
 // Возвращает распарсенный JSON или null (при сетевой/JSON-ошибке).
 // Сохраняет совместимость с прошлым контрактом «json или undefined».
-export async function sheetsPost(payload) {
+// timeoutMs — сколько ждать ответа (по умолчанию 8 с). Дольше ждёт только
+// /api/rates-refresh: его ответ не ждёт ни клиент, ни менеджер.
+export async function sheetsPost(payload, { timeoutMs = 8000 } = {}) {
   if (!APPS_SCRIPT_URL) return null;
   if (!APPS_SCRIPT_SECRET) {
     console.error('[sheets] APPS_SCRIPT_SECRET is not set — request will be rejected by Apps Script');
@@ -35,7 +37,7 @@ export async function sheetsPost(payload) {
   };
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const res = await fetchWithTimeout(APPS_SCRIPT_URL, opts, 8000);
+      const res = await fetchWithTimeout(APPS_SCRIPT_URL, opts, timeoutMs);
       if (!res.ok) {
         console.warn(`[sheets] post non-OK status: ${res.status} (attempt ${attempt}/2)`);
         if (attempt === 2) return null;
@@ -44,7 +46,7 @@ export async function sheetsPost(payload) {
       }
       try { return await res.json(); } catch { return null; }
     } catch (e) {
-      const reason = e.name === 'AbortError' ? 'timeout (8s)' : e.message;
+      const reason = e.name === 'AbortError' ? `timeout (${timeoutMs / 1000}s)` : e.message;
       console.error(`[sheets] post failed (attempt ${attempt}/2): ${reason}`);
       // Таймаут: Apps Script запрос всё равно выполнит — повтор только задвоит запись и ожидание.
       if (attempt === 2 || e.name === 'AbortError') return null;
@@ -58,6 +60,6 @@ export async function sheetsPost(payload) {
 // Раньше делал GET с секретом в URL (?secret=...) — секрет светился
 // в Apps Script execution logs. Теперь идём через doPost с секретом
 // в body, как все остальные методы.
-export async function sheetsGet() {
-  return sheetsPost({ type: 'get_rates' });
+export async function sheetsGet(options) {
+  return sheetsPost({ type: 'get_rates' }, options);
 }

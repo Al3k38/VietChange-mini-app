@@ -2,16 +2,22 @@
 // Серверный пересчёт курса/суммы для защиты от подмены клиентом.
 // Логика 1:1 портирована из index.html: getRate + applyRateLogic.
 //
-// Источники курсов (по приоритету):
+// Источники курсов (по приоритету, с 08.10.2026):
 //   1) In-memory кэш в Vercel-функции (TTL 60 сек) — самое быстрое.
-//   2) Apps Script (через sheetsGet) — основной источник, fresh из таблицы.
-//   3) Supabase rates_cache (persistent fallback) — если Apps Script лежит
-//      и in-memory пуст (например, после cold start). Возраст ≤ 24ч.
-//   4) Ничего — заявка отклоняется в order.js с 503.
+//   2) Копия в Supabase rates_cache, если ей не больше 3 минут. Её раз в
+//      минуту обновляет /api/rates-refresh (cron-job.org). Так заявка и
+//      экран курсов не ждут Apps Script: он работает 1–4 с, но его ответ
+//      иногда идёт обратно к Vercel дольше 8 с (разбор 07–08.10.2026).
+//   3) Apps Script (через sheetsGet) — если копия старая или недоступна.
+//   4) Apps Script не ответил — самая свежая из копий (в памяти или в
+//      Supabase, не старше 24 ч), с пометкой «курс резервный».
+//   5) Ничего — заявка отклоняется в order.js с 503.
 
 import { sheetsGet } from './sheets.mjs';
 
 const CACHE_TTL_MS = 60_000;
+const COPY_FRESH_MS = 3 * 60_000;                // копия моложе — берём без Apps Script
+const COPY_READ_TIMEOUT_MS = 3000;               // Supabase не ответил за 3 с — идём дальше
 const FALLBACK_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 часа
 
 const SUPABASE_URL         = process.env.SUPABASE_URL;
@@ -19,14 +25,15 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 let _cache = null;
 let _cachedAt = 0;
-let _cacheSource = 'none'; // 'fresh' | 'stale-memory' | 'stale-supabase' | 'none'
+let _cacheSource = 'none'; // 'fresh' | 'copy' | 'stale-memory' | 'stale-supabase' | 'none'
 let _cacheUpdatedAt = 0;   // timestamp реальной свежести данных (не кэша)
 
 // ─── ЗАПИСЬ КУРСОВ В SUPABASE (persistent backup) ────────────
-async function persistRatesToSupabase(rates) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return;
+// Возвращает true, если копия записана. Экспорт — для /api/rates-refresh.
+export async function persistRatesToSupabase(rates) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return false;
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/rates_cache`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rates_cache`, {
       method: 'POST',
       headers: {
         'apikey':        SUPABASE_SERVICE_KEY,
@@ -40,14 +47,21 @@ async function persistRatesToSupabase(rates) {
         updated_at: new Date().toISOString(),
       }),
     });
+    if (!res.ok) console.warn(`[rates-server] persist to Supabase: status ${res.status}`);
+    return res.ok;
   } catch (e) {
     console.warn('[rates-server] persist to Supabase failed:', e.message);
+    return false;
   }
 }
 
-// ─── ЧТЕНИЕ КУРСОВ ИЗ SUPABASE (persistent fallback) ─────────
+// ─── ЧТЕНИЕ КУРСОВ ИЗ SUPABASE (копия курсов) ────────────────
+// С 08.10.2026 стоит на основном пути (шаг 2 каскада), поэтому с таймаутом:
+// Supabase не ответил за COPY_READ_TIMEOUT_MS — идём к Apps Script, как раньше.
 async function loadRatesFromSupabase() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), COPY_READ_TIMEOUT_MS);
   try {
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/rates_cache?id=eq.1&select=rates,updated_at`,
@@ -56,6 +70,7 @@ async function loadRatesFromSupabase() {
           'apikey':        SUPABASE_SERVICE_KEY,
           'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
         },
+        signal: ctrl.signal,
       },
     );
     if (!res.ok) return null;
@@ -66,8 +81,10 @@ async function loadRatesFromSupabase() {
       updatedAt: new Date(arr[0].updated_at).getTime(),
     };
   } catch (e) {
-    console.warn('[rates-server] load from Supabase failed:', e.message);
+    console.warn('[rates-server] load from Supabase failed:', e.name === 'AbortError' ? `timeout (${COPY_READ_TIMEOUT_MS} ms)` : e.message);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -83,7 +100,20 @@ export async function getServerRates() {
     return _cache;
   }
 
-  // 2) Пробуем Apps Script (основной источник)
+  // 2) Свежая копия в Supabase (её раз в минуту обновляет /api/rates-refresh)
+  const copy = await loadRatesFromSupabase();
+  const copyAge = (copy && copy.rates && Number.isFinite(copy.updatedAt))
+    ? now - copy.updatedAt
+    : Infinity;
+  if (copyAge <= COPY_FRESH_MS) {
+    _cache = copy.rates;
+    _cachedAt = now;
+    _cacheUpdatedAt = copy.updatedAt;
+    _cacheSource = 'copy';
+    return _cache;
+  }
+
+  // 3) Копия старая или недоступна — спрашиваем Apps Script, как раньше
   const data = await sheetsGet();
   if (data && data.ok && data.rates) {
     _cache = data.rates;
@@ -95,27 +125,25 @@ export async function getServerRates() {
     return _cache;
   }
 
-  // 3) Apps Script упал — используем in-memory stale если есть
-  if (_cache) {
-    _cacheSource = 'stale-memory';
-    console.warn('[rates-server] Apps Script unavailable — using stale in-memory cache');
+  // 4) Apps Script не ответил — берём САМУЮ СВЕЖУЮ из копий.
+  //    До 08.10.2026 копия в памяти бралась раньше Supabase, даже если была
+  //    старше (заявка 07.10 21:43 ушла с «возраст ~92 мин»).
+  const memAge = _cache ? now - _cacheUpdatedAt : Infinity;
+  if (copyAge < memAge && copyAge <= FALLBACK_MAX_AGE_MS) {
+    _cache = copy.rates;
+    _cachedAt = now;
+    _cacheUpdatedAt = copy.updatedAt;
+    _cacheSource = 'stale-supabase';
+    console.warn(`[rates-server] Apps Script unavailable — using Supabase fallback (age ${Math.floor(copyAge/60000)} min)`);
     return _cache;
   }
-
-  // 4) In-memory пуст (cold start) — пробуем Supabase
-  const fallback = await loadRatesFromSupabase();
-  if (fallback && fallback.rates) {
-    const age = now - fallback.updatedAt;
-    if (age <= FALLBACK_MAX_AGE_MS) {
-      _cache = fallback.rates;
-      _cachedAt = now;
-      _cacheUpdatedAt = fallback.updatedAt;
-      _cacheSource = 'stale-supabase';
-      console.warn(`[rates-server] Apps Script unavailable — using Supabase fallback (age ${Math.floor(age/60000)} min)`);
-      return _cache;
-    } else {
-      console.error(`[rates-server] Supabase fallback too old: ${Math.floor(age/60000)} min > 24h max`);
-    }
+  if (_cache) {
+    _cacheSource = 'stale-memory';
+    console.warn(`[rates-server] Apps Script unavailable — using stale in-memory cache (age ${Math.floor(memAge/60000)} min)`);
+    return _cache;
+  }
+  if (copy && copy.rates) {
+    console.error(`[rates-server] Supabase fallback too old: ${Math.floor(copyAge/60000)} min > 24h max`);
   }
 
   // 5) Полная неудача
