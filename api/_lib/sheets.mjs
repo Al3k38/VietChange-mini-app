@@ -55,7 +55,13 @@ function parseJson(text) {
 //   postTryMs  — сколько ждать первого шага в одной попытке (по умолчанию —
 //                весь остаток времени, то есть без повтора).
 //   trace      — массив: сюда же складываются шаги (для ответа rates-refresh).
-export async function sheetsPost(payload, { timeoutMs = 8000, readOnly = false, postTryMs, trace } = {}) {
+//   noPostRetry — (09.10.2026) первый шаг отправлять ровно один раз, даже после
+//                сетевой ошибки или ошибки Google: так пишет заявка
+//                (_lib/order-sheet.mjs) — повторы она делает сама и только когда
+//                Apps Script не задваивает строки. Раньше после ошибки «fetch
+//                failed» (ответ оборвался, а скрипт уже записал строку) запрос
+//                уходил второй раз — так в «Заявках» появлялись дубли.
+export async function sheetsPost(payload, { timeoutMs = 8000, readOnly = false, postTryMs, trace, noPostRetry = false } = {}) {
   if (!APPS_SCRIPT_URL) return null;
   if (!APPS_SCRIPT_SECRET) {
     console.error('[sheets] APPS_SCRIPT_SECRET is not set — request will be rejected by Apps Script');
@@ -92,6 +98,7 @@ export async function sheetsPost(payload, { timeoutMs = 8000, readOnly = false, 
       const isTimeout = e.name === 'AbortError';
       note(`POST ${isTimeout ? 'таймаут' : 'ошибка «' + e.message + '»'} ${Date.now() - t1}мс`);
       postFailures++;
+      if (noPostRetry) break;
       // Таймаут: скрипт запрос всё равно выполнит — повтор задвоил бы запись.
       // Курс только читается — его можно спросить ещё раз, если вызов сам
       // ограничил ожидание первого шага (postTryMs, сейчас — только rates-refresh).
@@ -111,7 +118,7 @@ export async function sheetsPost(payload, { timeoutMs = 8000, readOnly = false, 
       }
       // Ошибка Google (500, 429…) — скрипт не выполнялся, можно повторить один раз.
       postFailures++;
-      if (postFailures >= 2) break;
+      if (noPostRetry || postFailures >= 2) break;
       await sleep(500);
       continue;
     }

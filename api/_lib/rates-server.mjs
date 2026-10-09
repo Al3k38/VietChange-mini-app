@@ -12,6 +12,9 @@
 //      раза в день утром, а пауз в обновлении копии длиннее 3 минут за день
 //      бывало 9, длиннее 6 — 3. Цена: если курс поменяли во время такой
 //      паузы, до 6 минут заявки идут по прежнему курсу без плашки.
+//      С 09.10.2026 копию сразу после правки листа «Курсы» кладёт и сам
+//      Apps Script (PuzzleBotSync.gs → функция базы push_rates), а база
+//      принимает только более свежее чтение листа (read_at) — эта цена ушла.
 //   3) Apps Script (через sheetsGet) — если копия старая или недоступна.
 //   4) Apps Script не ответил — самая свежая из копий (в памяти или в
 //      Supabase, не старше 24 ч), с пометкой «курс резервный».
@@ -31,32 +34,89 @@ let _cache = null;
 let _cachedAt = 0;
 let _cacheSource = 'none'; // 'fresh' | 'copy' | 'stale-memory' | 'stale-supabase' | 'none'
 let _cacheUpdatedAt = 0;   // timestamp реальной свежести данных (не кэша)
+let _appsScriptV = 1;      // версия веб-приложения Apps Script (09.10.2026: 2 — заявки не задваиваются)
+let _appsScriptVAt = 0;    // когда эту версию видели (время опроса Apps Script)
+const APPS_V_FRESH_MS = 10 * 60_000; // версии старше 10 минут не верим — считаем 1
+
+// Время чтения листа «Курсы» из ответа Apps Script. С 09.10.2026 Apps Script
+// отдаёт read_at (время ДО чтения); старая версия — только updated (сразу
+// после чтения). Ни того, ни другого — время, когда мы отправили запрос
+// (fallbackMs): оно точно не позже чтения.
+export function readAtOf(data, fallbackMs) {
+  for (const v of [data && data.read_at, data && data.updated]) {
+    const t = Date.parse(v || '');
+    if (Number.isFinite(t)) return new Date(t).toISOString();
+  }
+  return new Date(Number.isFinite(fallbackMs) ? fallbackMs : Date.now()).toISOString();
+}
 
 // ─── ЗАПИСЬ КУРСОВ В SUPABASE (persistent backup) ────────────
-// Возвращает true, если копия записана. Экспорт — для /api/rates-refresh.
-export async function persistRatesToSupabase(rates) {
+// С 09.10.2026 — через функцию базы save_pulled_rates: копия меняется, только
+// если этот запрос прочитал таблицу ПОЗЖЕ того, что уже лежит в копии (её
+// теперь кладёт и сам Apps Script сразу после правки курсов). Так ответ,
+// который шёл к нам 10 секунд, не затрёт только что поправленный курс.
+// readAt — когда прочитан лист (из ответа Apps Script), appsV — версия Apps Script.
+// Возвращает true, если база ответила (записала или оставила более свежую копию).
+// Экспорт — для /api/rates-refresh.
+export async function persistRatesToSupabase(rates, readAt, appsV) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return false;
+  const headers = {
+    'apikey':        SUPABASE_SERVICE_KEY,
+    'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+    'Content-Type':  'application/json',
+  };
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/save_pulled_rates`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        p_rates: rates,
+        p_read_at: readAt || new Date().toISOString(),
+        p_apps_v: Number.isInteger(appsV) ? appsV : null,
+      }),
+    });
+    if (res.ok) {
+      const r = await res.json().catch(() => null);
+      if (r && r.applied === false) {
+        console.warn('[rates-server] persist: в копии более свежие курсы (из Apps Script после правки) — не перезаписываю');
+      }
+      return true;
+    }
+    const errText = await res.text().catch(() => '');
+    if (res.status !== 404 || !errText.includes('PGRST202')) {
+      console.warn(`[rates-server] persist to Supabase: status ${res.status} ${errText.slice(0, 200)}`);
+      return false;
+    }
+    // 404 PGRST202 — функции в базе нет (миграцию не применили): пишем по-старому.
+    console.error('[rates-server] persist: функции save_pulled_rates в базе нет — пишу копию по-старому, без проверки свежести');
+  } catch (e) {
+    console.warn('[rates-server] persist to Supabase failed:', e.message);
+    return false;
+  }
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/rates_cache`, {
       method: 'POST',
-      headers: {
-        'apikey':        SUPABASE_SERVICE_KEY,
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'Content-Type':  'application/json',
-        'Prefer':        'resolution=merge-duplicates,return=minimal',
-      },
+      headers: { ...headers, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({
         id: 1,
         rates: rates,
         updated_at: new Date().toISOString(),
       }),
     });
-    if (!res.ok) console.warn(`[rates-server] persist to Supabase: status ${res.status}`);
+    if (!res.ok) console.warn(`[rates-server] persist to Supabase (old way): status ${res.status}`);
     return res.ok;
   } catch (e) {
     console.warn('[rates-server] persist to Supabase failed:', e.message);
     return false;
   }
+}
+
+// Версия Apps Script, которую видели последней (из копии или прямого ответа),
+// если её видели не раньше 10 минут назад; иначе 1.
+// order.js повторяет запись заявки в таблицу только при версии 2 и выше —
+// старая версия на повтор записала бы заявку дважды.
+export function getAppsScriptVersion() {
+  return Date.now() - _appsScriptVAt <= APPS_V_FRESH_MS ? _appsScriptV : 1;
 }
 
 // ─── ЧТЕНИЕ КУРСОВ ИЗ SUPABASE (копия курсов) ────────────────
@@ -67,8 +127,10 @@ async function loadRatesFromSupabase() {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), COPY_READ_TIMEOUT_MS);
   try {
+    // select=* — работает и до, и после миграции 09.10.2026 (новые колонки
+    // read_at и apps_v приходят, только когда они уже есть).
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/rates_cache?id=eq.1&select=rates,updated_at`,
+      `${SUPABASE_URL}/rest/v1/rates_cache?id=eq.1&select=*`,
       {
         headers: {
           'apikey':        SUPABASE_SERVICE_KEY,
@@ -80,9 +142,14 @@ async function loadRatesFromSupabase() {
     if (!res.ok) return null;
     const arr = await res.json();
     if (!Array.isArray(arr) || arr.length === 0) return null;
+    // Свежесть — по времени чтения листа (read_at), а если его ещё нет —
+    // по времени записи, как раньше.
+    const readAt = Date.parse(arr[0].read_at || '');
     return {
       rates: arr[0].rates,
-      updatedAt: new Date(arr[0].updated_at).getTime(),
+      updatedAt: Number.isFinite(readAt) ? readAt : new Date(arr[0].updated_at).getTime(),
+      appsV: Number.isInteger(arr[0].apps_v) ? arr[0].apps_v : 1,
+      appsVAt: Date.parse(arr[0].apps_v_at || '') || 0,
     };
   } catch (e) {
     console.warn('[rates-server] load from Supabase failed:', e.name === 'AbortError' ? `timeout (${COPY_READ_TIMEOUT_MS} ms)` : e.message);
@@ -109,6 +176,7 @@ export async function getServerRates() {
   const copyAge = (copy && copy.rates && Number.isFinite(copy.updatedAt))
     ? now - copy.updatedAt
     : Infinity;
+  if (copy && copy.appsVAt >= _appsScriptVAt) { _appsScriptV = copy.appsV; _appsScriptVAt = copy.appsVAt; }
   if (copyAge <= COPY_FRESH_MS) {
     _cache = copy.rates;
     _cachedAt = now;
@@ -118,14 +186,17 @@ export async function getServerRates() {
   }
 
   // 3) Копия старая или недоступна — спрашиваем Apps Script, как раньше
+  const asked = Date.now();
   const data = await sheetsGet();
   if (data && data.ok && data.rates) {
     _cache = data.rates;
     _cachedAt = now;
     _cacheUpdatedAt = now;
     _cacheSource = 'fresh';
+    _appsScriptV = Number.isInteger(data.v) ? data.v : 1;
+    _appsScriptVAt = Date.now();
     // Параллельно дублируем в Supabase для будущих cold starts
-    persistRatesToSupabase(data.rates).catch(() => {});
+    persistRatesToSupabase(data.rates, readAtOf(data, asked), data.v).catch(() => {});
     return _cache;
   }
 

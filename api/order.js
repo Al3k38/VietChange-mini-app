@@ -2,7 +2,7 @@
 // SECURITY: ставка/сумма пересчитываются на сервере (см. _lib/rates-server.mjs).
 
 import { assessRisk, formatRiskBlock, formatRiskShort } from './risk-check.mjs';
-import { recalcOrder } from './_lib/rates-server.mjs';
+import { recalcOrder, getAppsScriptVersion } from './_lib/rates-server.mjs';
 import { esc } from './_lib/escape.mjs';
 import { sheetsPost } from './_lib/sheets.mjs';
 import { verifyTelegramInitData } from './_lib/verify.mjs';
@@ -10,6 +10,16 @@ import { setCorsHeaders } from './_lib/cors.mjs';
 import { markNonceUsed, getAuthDate } from './_lib/replay.mjs';
 import { checkBlacklist } from './_lib/blacklist.mjs';
 import { sendOrderToCashbook, htmlToPlain } from './_lib/cashbook.mjs';
+import { startOrderSheetWrite, keepAliveAfterResponse } from './_lib/order-sheet.mjs';
+
+// 09.10.2026: после ответа клиенту функция может ещё до ~60 с дописывать
+// заявку в таблицу (см. _lib/order-sheet.mjs). Худший путь целиком ~80 с,
+// 120 с — с запасом.
+export const config = { maxDuration: 120 };
+
+// Сколько клиент ждёт запись в таблицу сверх остальных шагов. Обычно она к
+// этому моменту уже закончена: шла параллельно с отправкой сообщений.
+const SHEET_WAIT_MS = 3000;
 
 const BOT_TOKEN        = process.env.BOT_TOKEN;
 const GROUP_ID         = process.env.GROUP_ID;
@@ -28,7 +38,7 @@ function nowVN() {
     .replace('T', ' ').substring(0, 16) + ' (GMT+7)';
 }
 
-async function tgSend(chatId, text, threadId, replyToMessageId) {
+async function tgSend(chatId, text, threadId, replyToMessageId, opts = {}) {
   try {
     const body = {
       chat_id: chatId,
@@ -38,10 +48,13 @@ async function tgSend(chatId, text, threadId, replyToMessageId) {
     };
     if (threadId) body.message_thread_id = parseInt(threadId);
     if (replyToMessageId) body.reply_to_message_id = parseInt(replyToMessageId);
+    // 09.10.2026: если сообщение-заявку уже удалили — отправить без ответа на него
+    if (opts.allowWithoutReply) body.allow_sending_without_reply = true;
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      ...(opts.timeoutMs ? { signal: AbortSignal.timeout(opts.timeoutMs) } : {}),
     });
     return res.json();
   } catch(e) { console.error('tgSend error:', e); }
@@ -71,10 +84,6 @@ async function puzzleSendCommand(userId, commandName) {
     const data = await res.json();
     if (data.code !== 0) console.warn('PuzzleBot error:', data);
   } catch(e) { console.error('PuzzleBot error:', e); }
-}
-
-async function appendToSheet(data) {
-  await sheetsPost(data);
 }
 
 function buildGroupMessage(d, orderNum, mismatchFlag) {
@@ -371,6 +380,39 @@ export default async function handler(req, res) {
       }
     }
 
+    // Запись в лист «Заявки» (09.10.2026): начинаем сразу, она идёт
+    // параллельно с шагами ниже, и сразу отдаём её Vercel (waitUntil), чтобы
+    // функция не выключилась посреди записи. Повторы — только если Apps Script
+    // не задваивает строки (версия 2) и Vercel её держит.
+    let sheetKeptAlive = false;
+    const sheetWrite = startOrderSheetWrite({
+      orderNum, datetime,
+      username:  d.username  || '',
+      userId:    d.userId    || '',
+      fromLabel: d.fromLabel || '',
+      amtFrom:   d.amtFrom   || '',
+      toLabel:   d.toLabel   || '',
+      amtTo:     d.amtTo     || '',       // ← уже серверное значение
+      rate:      d.rate      || '',       // ← уже серверное значение
+      method:    d.method    || '',
+      date:      d.date      || '',
+      time:      d.time      || '',
+      location:  d.location  || '',
+      reqs:      d.reqs      || {},
+      comment:   d.comment   || '',
+    }, {
+      canRetry: () => sheetKeptAlive && getAppsScriptVersion() >= 2,
+      onGiveUp: async (attempts) => {
+        if (!GROUP_ID) return;
+        const warn = `⚠️ <b>Заявка №${orderNum} не подтверждена в таблице «Заявки»</b>\n` +
+          `Google не ответил (попыток: ${attempts}). Проверьте лист «Заявки» через 2–3 минуты: ` +
+          `если строки так и нет — внесите вручную.`;
+        const r = await tgSend(GROUP_ID, warn, THREAD_ID, orderMessageId, { allowWithoutReply: true, timeoutMs: 10000 });
+        if (!r || !r.ok) console.error(`[order] алерт «не подтверждена» по ${orderNum} не отправлен:`, JSON.stringify(r || null).slice(0, 200));
+      },
+    });
+    sheetKeptAlive = keepAliveAfterResponse(sheetWrite.done);
+
             // Копия заявки в Cashbook. Идёт параллельно с остальной работой ниже,
     // ждём её только перед ответом — клиента не задерживает. Не бросает ошибок.
     const cashbookPromise = sendOrderToCashbook({
@@ -398,24 +440,16 @@ export default async function handler(req, res) {
       await puzzleSendCommand(d.userId, PUZZLEBOT_CMD);
     }
 
-    await appendToSheet({
-      orderNum, datetime,
-      username:  d.username  || '',
-      userId:    d.userId    || '',
-      fromLabel: d.fromLabel || '',
-      amtFrom:   d.amtFrom   || '',
-      toLabel:   d.toLabel   || '',
-      amtTo:     d.amtTo     || '',       // ← уже серверное значение
-      rate:      d.rate      || '',       // ← уже серверное значение
-      method:    d.method    || '',
-      date:      d.date      || '',
-      time:      d.time      || '',
-      location:  d.location  || '',
-      reqs:      d.reqs      || {},
-      comment:   d.comment   || '',
-    });
-
-            await cashbookPromise;
+    // Таблица: если Vercel дождётся работы после ответа (waitUntil), клиент
+    // ждёт запись не дольше SHEET_WAIT_MS, остальное (и повторы) — после
+    // ответа. Без waitUntil — ждём до конца, как раньше: иначе функцию могут
+    // остановить посреди записи (см. «fast-respond ненадёжен», 20.05.2026).
+    if (sheetKeptAlive) {
+      await Promise.race([sheetWrite.first, new Promise(r => setTimeout(r, SHEET_WAIT_MS))]);
+    } else {
+      await sheetWrite.done;
+    }
+    await cashbookPromise;
     return res.status(200).json({ ok: true, orderNum });
 
   } catch(e) {

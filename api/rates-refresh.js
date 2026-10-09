@@ -15,7 +15,7 @@
 // сообщает /api/healthcheck.
 
 import { sheetsGet } from './_lib/sheets.mjs';
-import { persistRatesToSupabase } from './_lib/rates-server.mjs';
+import { persistRatesToSupabase, readAtOf } from './_lib/rates-server.mjs';
 
 // Ждём дольше, чем заявка (8 с): этот ответ никто не ждёт.
 // Меньше 15 с — чтобы уложиться в стандартный лимит функции и в 30 с cron-job.org.
@@ -43,7 +43,9 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: false, step: 'apps_script', waited_ms: waitedMs, steps });
   }
 
-  const saved = await persistRatesToSupabase(data.rates);
+  // 09.10.2026: передаём, когда Apps Script прочитал лист, — база не даст
+  // этому ответу затереть курс, который Apps Script положил после правки.
+  const saved = await persistRatesToSupabase(data.rates, readAtOf(data, started), data.v);
   if (!saved) {
     console.warn('[rates-refresh] курс получен, но копия в Supabase не записана');
     return res.status(200).json({ ok: false, step: 'supabase', waited_ms: waitedMs, steps });
@@ -53,6 +55,7 @@ export default async function handler(req, res) {
     ok: true,
     waited_ms: waitedMs,
     pairs: Object.keys(data.rates).length,
+    apps_script_v: Number.isInteger(data.v) ? data.v : 1,
     steps,
   });
 }
