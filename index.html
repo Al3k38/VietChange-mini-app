@@ -1181,6 +1181,16 @@ function onAmountChange(source) {
     isInverted = true;
   }
   const { rate, commission, note, msg } = applyRateLogic(baseRate, rubEquiv, to, from, isInverted);
+    // Сумма меньше фиксированной комиссии 70.000 VND → курс 0. Не делим на ноль:
+  // второе поле оставляем пустым и показываем подсказку вместо «1 RUB = 0 VND».
+  if (!(rate > 0)) {
+    if (source === 'from') { document.getElementById('input-to').value = ''; state.amountFrom = state.amountFromRaw = amountFrom; state.amountTo = state.amountToRaw = 0; }
+    if (source === 'to') { document.getElementById('input-from').value = ''; state.amountTo = state.amountToRaw = amountTo; state.amountFrom = state.amountFromRaw = 0; }
+    document.getElementById('rate-card').classList.add('hidden');
+    document.getElementById('comments-wrap').innerHTML = '<div class="comment-box comment-warn mt6">⚠️ Слишком маленькая сумма для обмена.</div>';
+    checkSubmitReady();
+    return;
+  }
   const commInTo = commission > 0 ? (commission / (RATES['RUB_b_'+to] || (1/RATES[to+'_RUB_b']) || 0)) : 0;
   const isATM = state.method === 'atm' && (to === 'VND' || to === 'VND_b');
 
@@ -1201,12 +1211,6 @@ function onAmountChange(source) {
   } else if (source === 'to' && amountTo > 0) {
     // Клиент ввёл amountTo → точное значение из инпута
     let result = amountTo;
-    if (isATM) {
-      result = Math.round(result / 100000) * 100000;
-      if (result !== amountTo) {
-        document.getElementById('input-to').value = result;
-      }
-    }
     state.amountToRaw = result;
     let neededRaw = result / rate;
     let needed = roundAmount(neededRaw, from);
@@ -1410,7 +1414,30 @@ function selectMethod(m, silent) {
       '<div class="comment-box comment-info mt6 atm-note">🏧 Банкомат выдаёт только суммы, кратные 100.000 VND. Итоговая сумма скорректирована.</div>');
   }
 }
-
+// ─── БАНКОМАТ: СУММА КРАТНА 100.000 VND ──────────────────────
+// Округляем, когда клиент закончил ввод (ушёл из поля или нажал кнопку),
+// а не на каждой цифре — иначе сумму в VND ввести нельзя.
+// Если клиент вводил «Отдаёте», подстраиваем её под округлённую сумму VND.
+function atmRoundTo() {
+  const isATM = state.method === 'atm' && (state.to === 'VND' || state.to === 'VND_b');
+  const inFrom = document.getElementById('input-from');
+  const inTo = document.getElementById('input-to');
+  const v = parseFloat(inTo.value) || 0;
+  if (!isATM || v <= 0) return;
+  // Клиент стёр сумму «Отдаёте» — ничего не подставляем
+  if (state.lastEditedField === 'from' && !(parseFloat(inFrom.value) > 0)) return;
+  const r = Math.round(v / 100000) * 100000;
+  if (r === v && state.lastEditedField === 'to') return;
+  inTo.value = r > 0 ? r : '';
+  if (r <= 0) {
+    inFrom.value = '';
+    state.amountFrom = state.amountTo = state.amountFromRaw = state.amountToRaw = 0;
+  }
+  onAmountChange('to');      // пересчёт «Отдаёте» от суммы, которую выдаст банкомат
+  selectMethod('atm', true); // вернуть плашку «Банкомат выдаёт только суммы, кратные 100.000 VND»
+}
+document.getElementById('input-from').addEventListener('change', atmRoundTo);
+document.getElementById('input-to').addEventListener('change', atmRoundTo);
 function onRepCheck() {
   const checked = document.getElementById('rep-check').checked;
   document.getElementById('rep-address').classList.toggle('hidden', !checked);
@@ -1817,6 +1844,7 @@ function buildConfirmData() {
 
 // ─── GO TO CONFIRM ────────────────────────────────────────────
 function goToConfirm() {
+  atmRoundTo();
   const d = buildConfirmData();
   const fromLabel = LABELS[d.from] || d.from;
   const toLabel = LABELS[d.to] || d.to;
